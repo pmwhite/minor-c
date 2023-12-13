@@ -1,0 +1,232 @@
+The language is extremely similar to C, but with many simplifying assumptions,
+for the sake of achieving a small and efficient implementation. In addition,
+the type system has been modified to allow for a higher degree of abstraction,
+which we claim assists in producing high quality software more quickly.
+
+The compiler translates source code into C89, which can then be translated into
+machine code by a C compiler. It should be straightforward to predict the C
+code produced by the compiler, which means that predicting behavior and
+performance should be as easy as for C programs. In fact, it ought to be
+easier, or else the language is not providing value and you should stop using
+it.
+
+TYPES
+
+The primitive types are
+  void, size,
+  i8, u8,
+  i16, u16,
+  i32, u32,
+  i64, u64,
+  f32, f64.
+
+Structs contain fields, each having a type and a name.
+
+  struct point {
+    x i32
+    y i32
+  }
+
+  struct color {
+    r u8
+    g u8
+    b u8
+  }
+
+Enums contain names, each representing their index into the list of names.
+
+  enum rainbow_color {
+    red
+    orange
+    yellow
+    green
+    blue
+    indigo
+    violet
+  }
+
+Unions contain alternatives, each having a type and a name.
+
+  union vehicle {
+    car car
+    truck truck
+  }
+
+Structs, enums, and unions each introduce a new type name into scope. In
+contrast, arrays and pointer types are structural.
+
+  struct stuff {
+    pointer i32*
+    pointer_to_pointer i32**
+    array i32[10]
+  }
+
+FUNCTIONS
+
+Functions can be declared without an implementation.
+
+  fn add(x i32, y i32) i32.
+  fn negative(x i32) i32.
+
+Or they can provide an implementation.
+
+  fn subtract(x i32, y i32) i32 {
+    return add(x, negative(y))
+  }
+
+Variables can be introduced with or without a type.
+
+  fn subtract(x i32, y i32) i32 {
+    let neg_y = negative(y)
+    let neg_neg_x i32 = negative(negative(x))
+    return add(neg_neg_x, neg_y)
+  }
+
+As already demonstrated, you can return from functions.
+
+If statements receive a condition expression and the body must always be
+surrounded by braces. The else clause may be omitted.
+
+  fn abs(x i32) i32 {
+    if less_than(x, 0) {
+      return negative(x)
+    } else {
+      return x
+    }
+  }
+
+  fn abs(x i32) i32 {
+    if less_than(x, 0) {
+      return negative(x)
+    }
+  }
+
+While statements take a condition and have a loop body within braces.
+
+  fn fib(n u32) u32 {
+    let last u32 = 0
+    let result u32 = 1
+    while greater_than(n, 0) {
+      let temp = result
+      result = add(result, last)
+      last = temp
+    }
+    return result
+  }
+
+The past examples have demonstrated function calls, let-binding and
+assignment.
+
+OPERATORS
+
+Some built-in operators are allowed, but there is no way to have user-defined
+operators. The built-in operators are overloaded in the sense that they work
+for many different built-in types. However, the two operands must be of the
+same type - there is no implicit coercion between types.
+
+  fn add(x i32, y i64) {
+    return x + y /* Error: i32 and i64 cannot be added together. */
+  }
+
+The built-in math operators are +, -, *, /, %.
+The built-in bitwise operators are &, |, ^.
+
+The equality operator is == and it is defined for all the primitive types.
+Non-primitive types must define their own equality type.
+
+COMMENTS
+
+The only supported comment style is multiline comments. Unlike in C, they can
+be nested, which means you can comment out large sections of code without
+worring about the comments in that code.
+
+GLOBALS
+
+Global variables look very similar to local variables.
+
+  let x i32 = 0
+
+NAMESPACING
+
+Often it is desirable to use a common prefix for a set of names so that it is
+clear that they are related a certain piece of functionality or they operate on
+the same types. In addition, since many domains often use overlapping
+terminology, the prefix is often necessary to distinguish functions with some
+name but of different domains.
+
+A disadvantage of name prefixes is that code that uses the prefix a lot is much
+noisier. Namespaces are a popular and reasonably effective mechanism for
+alleviating this disadvantage.
+
+Namespaces contain definitions. Within the namespace, each definition may be
+referred to as usual, but outside the namespace, it must be prefixed by the
+namespace name and a dot.
+
+  ns i32 {
+    fn add(x i32, y i32) i32.
+    fn negative(x i32) i32.
+
+    fn subtract(x i32, y i32) i32 {
+      return add(x, negative(y))
+    }
+  }
+
+  fn subtract(x i32, y i32) i32 {
+    return i32.add(x, i32.negative(y))
+  }
+
+It is legal to define the same namespace twice; any new definitions will be
+added to the existing set of definitions.
+
+  ns i32 {
+    fn add(x i32, y i32) i32.
+  }
+
+  ns i32 {
+    fn negative(x i32) i32.
+  }
+
+  fn subtract(x i32, y i32) i32 {
+    return i32.add(x, i32.negative(y))
+  }
+
+When resolving a name usage, the set of existing names is searched for the base
+name with each of its possible prefixes. For instance, consider the following
+code:
+
+  fn f(a i32) i32.
+
+  ns a {
+    fn f(a i32) i32.
+
+    ns b {
+      fn f(a i32) i32.
+
+      fn g(a i32) i32 {
+        return f(a)
+      }
+    }
+  }
+
+When resolving the call to f, there are three possible functions it could
+resolve to. First the compiler searches for a.b.f, since the current namespace
+is a.b. If it does not find it, then it searches for a.f, and then finally just
+plain f. The first search that succeeds is the one that gets used.
+
+IMPLEMENTATION CONSTRAINTS
+
+The program that translates this source code to C has the following
+characteristics.
+- Memory is only allocated at the beginning of the program.
+- The amount of memory needed to represent the current scope has an upper
+  bound, which means there is a limit to the number of names that can be in
+  scope at once.
+- There is a fixed upper bound on the amount of memory that can be taken up
+  while processing a declaration. In other words, there is a limit on the size
+  of a function. This limit should be large enough that it is not too
+  constraining, but it does mean that you cannot write large programs entirely
+  in a single function.
+- The time it takes to translate a codebase into C should scale linearly with
+  the size of the codebase. In other words, the algorithms should be extremely
+  local, and there should not be opportunity for the programmer to build
+  pathological program architectures that cause compilation times to blow up.
