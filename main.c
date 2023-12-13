@@ -37,9 +37,17 @@ typedef enum bool_t {
  * -------------------------------------------------------------------------------- */
 
 void* syscall5(void* number, void* arg1, void* arg2, void* arg3, void* arg4, void* arg5);
+void* syscall4(void* number, void* arg1, void* arg2, void* arg3, void* arg4);
+void* syscall3(void* number, void* arg1, void* arg2, void* arg3);
+void* syscall2(void* number, void* arg1, void* arg2);
+void* syscall1(void* number, void* arg1);
 
 i64_t syscall_write(i32_t fd, void const* data, u64_t nbytes) {
   return (i64_t) syscall5((void*)1, (void*)(i64_t)fd, (void*)data, (void*)nbytes, 0, 0);
+}
+
+i64_t syscall_exit(i32_t status) {
+  return (i64_t) syscall1((void*)60, (void*)(i64_t)status);
 }
 
 /* -------------------------------------------------------------------------------- */
@@ -77,9 +85,8 @@ size_t log_index = 0;
 size_t log_indent_count = 0;
 bool_t at_start_of_line = true;
 
-void log_string(char* s) {
+void log_maybe_add_indent() {
   size_t indent_count = min_size(log_indent_count, LOG_BUFFER_LEN_MINUS_ONE);
-  size_t s_index = 0;
   if (at_start_of_line) {
     while (log_index < indent_count) {
       log_buffer[log_index] = ' ';
@@ -87,11 +94,30 @@ void log_string(char* s) {
     }
     at_start_of_line = false;
   }
+}
+
+/* Add a null-terminated string to the log. */
+void log_string(char* s) {
+  size_t s_index = 0;
+  log_maybe_add_indent();
   while (log_index < LOG_BUFFER_LEN_MINUS_ONE) {
     char c = s[s_index];
     if (c == 0) {
       break;
     }
+    log_buffer[log_index] = c;
+    log_index = log_index + 1;
+    s_index = s_index + 1;
+  }
+}
+
+/* Add a string of the specified length to the log. The string must not contain
+   any null characters. */
+void log_lstring(char* s, size_t length) {
+  size_t s_index = 0;
+  log_maybe_add_indent();
+  while (log_index < LOG_BUFFER_LEN_MINUS_ONE && s_index < length) {
+    char c = s[s_index];
     log_buffer[log_index] = c;
     log_index = log_index + 1;
     s_index = s_index + 1;
@@ -112,6 +138,11 @@ void log_indent() {
 
 void log_dedent() {
   log_indent_count = log_indent_count - 2;
+}
+
+void log_line(char* s) {
+  log_string(s);
+  log_newline();
 }
 
 /* -------------------------------------------------------------------------------- */
@@ -198,7 +229,10 @@ strings_id_t strings_id(char* string, size_t length) {
       /* The candidate being the null pointer indicates that the slot is free,
          which means we should fill it in with the input string. */
       if (strings_data_index + length >= STRINGS_DATA_LENGTH) {
-        /* TODO: abort the program because there is not enough space for the new string. */
+        log_string("Attempted to add the string \"");
+        log_lstring(string, length);
+        log_string("\" to the internal identifier hashmap, but the limit of 100MB of total characters has already been reached.");
+        syscall_exit(1);
       }
       strings_pointers[candidate_index] = &strings_data[strings_data_index];
       i = 0;
@@ -213,8 +247,10 @@ strings_id_t strings_id(char* string, size_t length) {
     }
     candidate_index = candidate_index + 1;
   } while (candidate_index != final_hash);
-  /* TODO: abort the program because the string was not found, and there were
-     no empty spots to put it into. */
+  log_string("Attempted to add the string \"");
+  log_lstring(string, length);
+  log_string("\" to the internal identifier hashmap, but the hashmap was full.");
+  syscall_exit(1);
   return 0;
 } 
 
@@ -250,13 +286,10 @@ strings_id_t strings_id(char* string, size_t length) {
  */
 
 i32_t main(i32_t argc, char* argv[]) {
-  log_string("hello");
-  log_newline();
+  log_line("hello");
   log_indent();
-  log_string("hello");
-  log_newline();
+  log_line("hello");
   log_dedent();
-  log_string("hello");
-  log_newline();
+  log_line("hello");
   return 0;
 }
