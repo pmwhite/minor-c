@@ -1,4 +1,25 @@
 /* --------------------------------------------------------------------------------
+ * LIMITS
+ *
+ * Various memory limits are hardcoded, but it should be easily adjustable, so
+ * we put all the constants in one place.
+ * -------------------------------------------------------------------------------- */
+
+#define TEN_MB 10485760 
+#define HUNDRED_MB 104857600
+#define MAX_U16 65536
+
+#define STRINGS_DATA_LENGTH HUNDRED_MB
+#define STRINGS_POINTERS_LENGTH MAX_U16
+
+#define STRUCT_FIELDS_LENGTH MAX_U16
+#define STRUCT_INFO_LENGTH MAX_U16
+
+#define PARSE_TYPE_BUFFER_LENGTH MAX_U16
+
+/* -------------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------------
  * TYPES
  *
  * We define our own basic types for a couple reasons.
@@ -31,7 +52,7 @@ typedef enum bool_t {
 
 
 /* --------------------------------------------------------------------------------
- * SYSCALLS
+ * SYSTEM CALLS
  *
  * Since we do not use the C standard library, we must define our own syscall wrappers.
  * -------------------------------------------------------------------------------- */
@@ -42,8 +63,12 @@ void* syscall3(void* number, void* arg1, void* arg2, void* arg3);
 void* syscall2(void* number, void* arg1, void* arg2);
 void* syscall1(void* number, void* arg1);
 
+i64_t syscall_read(i32_t fd, void* data, u64_t nbytes) {
+  return (i64_t) syscall3((void*)0, (void*)(i64_t)fd, data, (void*)nbytes);
+}
+
 i64_t syscall_write(i32_t fd, void const* data, u64_t nbytes) {
-  return (i64_t) syscall5((void*)1, (void*)(i64_t)fd, (void*)data, (void*)nbytes, 0, 0);
+  return (i64_t) syscall3((void*)1, (void*)(i64_t)fd, (void*)data, (void*)nbytes);
 }
 
 i64_t syscall_exit(i32_t status) {
@@ -158,14 +183,12 @@ void log_line(char* s) {
  * -------------------------------------------------------------------------------- */
 
 /* The total amount of string data must not exceed 100 MB = 104857600 bytes. */
-const size_t STRINGS_DATA_LENGTH = 104857600;
-char strings_data[104857600] = {0};
+char strings_data[STRINGS_DATA_LENGTH] = {0};
 size_t strings_data_index = 0;
 
-const size_t STRINGS_MAX_ID = 65536;
 
 /* The index into this array must be representable by 16 bits. */
-char* strings_pointers[65536] = {0};
+char* strings_pointers[STRINGS_POINTERS_LENGTH] = {0};
 
 typedef u16_t strings_id_t;
 
@@ -252,9 +275,256 @@ strings_id_t strings_id(char* string, size_t length) {
   log_string("\" to the internal identifier hashmap, but the hashmap was full.");
   syscall_exit(1);
   return 0;
-} 
+}
 
 /* -------------------------------------------------------------------------------- */
+
+/* The representation and database format of type info must be driven by the
+   type inference algorithm, since that is the main thing that queries this
+   database.
+
+   Type information in a function originates from data literals, function
+   calls, field accesses, array indexing, and explicit annotations on names. It
+   flows backward through the program until every variable declaration and
+   parameter has a type (so that we can declare the type up front in the
+   generated C code).
+
+   Let's take each of these in turn:
+   - For data literals, we can immediately tell its type based on the literal
+     itself. Integers always have a suffix that says what type they are, and
+     struct literals begin with the name of the struct type, for instance.
+   - For function calls, we need to get all the argument types of the function
+     with that name.
+   - For field accesses, we need a mapping from
+
+   When we access a struct field, say, with the expression "x.y", we require
+   that x's type is known, and then we can determine the type of the entire
+   field access expression by looking at the struct's type.
+*/
+
+/* Types are represented as a pair of some base named type and the kind of
+   type, which indicates roughly whether it is a pointer or not. More
+   precisely, instead of making "pointer" a constructor, we just enumerate all
+   the possible levels of nesting. As a consequence, no program can use more
+   than 6 levels of pointers nesting. */
+
+typedef struct struct_field_t {
+  strings_id_t name;
+  strings_id_t type;
+} struct_field_t;
+
+typedef struct struct_info_t {
+  u16_t number_of_fields;
+  struct_field_t* fields;
+} struct_info_t;
+
+struct_field_t struct_fields[STRUCT_FIELDS_LENGTH];
+size_t struct_fields_index = 0;
+struct_info_t struct_infos[STRUCT_INFO_LENGTH];
+
+void types_add_struct_field(struct_field_t field) {
+  if (struct_fields_index < STRUCT_FIELDS_LENGTH) {
+    struct_fields[struct_fields_index] = field;
+    struct_fields_index = struct_fields_index + 1;
+  } else {
+    log_string("Attempted to add the struct field \"");
+    log_string(strings_pointers[field.name]);
+    log_line("\" but the internal struct field array is already full.");
+    syscall_exit(1);
+  }
+}
+
+char parse_read_buffer[1024];
+size_t parse_read_buffer_index = 0;
+size_t parse_read_buffer_length = 0;
+
+/* Returns the next character in the stream. If the current buffer of
+   characters has been exhausted, we perform a blocking read on stdin to refill
+   it. If the read fail, we abort. A return value of 0 indicates that there are
+   no more characters to get. */
+char peek_char() {
+  if (parse_read_buffer_index < parse_read_buffer_length) {
+    char c = parse_read_buffer[parse_read_buffer_index];
+    return c;
+  } else {
+    size_t read_result = syscall_read(0, parse_read_buffer, 1024);
+    if (read_result > 0) {
+      parse_read_buffer_length = read_result;
+      parse_read_buffer_index = 0;
+      return parse_read_buffer[0];
+    } else if (read_result == 0) {
+      return 0;
+    } else {
+      log_string("Got unix error code while trying to read stdin.");
+      syscall_exit(1);
+      return 0;
+    }
+  }
+}
+
+/* Skip past the current character. The behavior is undefined if the stream is
+   already exhausted, so it is necessary to have first gotten a non-zero return
+   value from peek_char. */
+void advance_char() {
+  parse_read_buffer_index = parse_read_buffer_index + 1;
+}
+
+/* Peek the next character and advance past it if non-zero. We do not abort if
+   the stream is ended because there is not enough context in this function to
+   give a good error message. */
+char parse_char() {
+  char c = peek_char();
+  if (c) {
+    advance_char();
+  }
+  return c;
+}
+
+/* Tries to skip past the specified string. If the next characters do not match
+   the string or the stream ends before we find the whole string, we stop
+   advancing and return false. We do not abort on failure because there is not
+   enough context in this function to give a good error message. */
+bool_t parse_exactly(char* string) {
+  size_t i = 0;
+  char parsed_char;
+again:
+  parsed_char = parse_char();
+  char string_char = string[i];
+  if (parsed_char == string_char) {
+    if (parsed_char) {
+      i = i + 1;
+      goto again;
+    } else {
+      return true;
+    }
+  } else {
+    return false;
+  }
+}
+
+/* Determines whether the given character is a whitespace character. */
+bool_t parse_is_whitespace(char c) {
+  switch (c) {
+    case ' ':
+    case '\t':
+    case '\n': return true;
+    default: return false;
+  }
+}
+
+/* Skips past whitespace, if there is any. */
+void parse_skip_whitespace() {
+  while (parse_is_whitespace(peek_char())) {
+    advance_char();
+  }
+}
+
+/* Skips past whitespace, but aborting if there is no whitespace to be found. */
+void parse_skip_whitespace1() {
+  if (parse_is_whitespace(parse_char())) {
+    parse_skip_whitespace();
+  } else {
+    log_line("Expected whitespace.");
+    syscall_exit(1);
+  }
+}
+
+void parse_error_expected_declaration_start_keyword() {
+    log_line("Expected one of 'struct', 'enum', 'fn', or 'let' to begin declaration.");
+    syscall_exit(1);
+}
+
+u8_t parse_identifier_start_chars[256];
+u8_t parse_identifier_rest_chars[256];
+
+void parse_init_identifier_chars() {
+  size_t c = 'a' - 1;
+  do {
+    parse_identifier_start_chars[c] = 1;
+    parse_identifier_rest_chars[c] = 1;
+  } while (c < 'z');
+  c = '0';
+  do {
+    parse_identifier_rest_chars[c] = 1;
+  } while (c < '9');
+  parse_identifier_rest_chars['_'] = 1;
+}
+
+strings_id_t parse_permanent_identifier() {
+  size_t start_index = parse_read_buffer_index;;
+  char c = peek_char();
+  if (parse_identifier_start_chars[(size_t) c]) {
+    do {
+      advance_char();
+      c = peek_char();
+    } while (parse_identifier_rest_chars[(size_t) c]);
+    return strings_id(&parse_read_buffer[start_index], parse_read_buffer_index - start_index);
+  } else {
+    log_line("Expected identifier.");
+    syscall_exit(1);
+    return 0;
+  }
+}
+
+char parse_type_buffer[PARSE_TYPE_BUFFER_LENGTH];
+size_t parse_type_buffer_index = 0;
+
+strings_id_t parse_type() {
+  size_t start_index = parse_read_buffer_index;
+  char c = peek_char();
+  if (parse_identifier_start_chars[(size_t) c]) {
+    do {
+      parse_type_buffer[parse_type_buffer_index] = c;
+      parse_type_buffer_index = parse_type_buffer_index + 1;
+      advance_char();
+      c = peek_char();
+    } while (parse_identifier_rest_chars[(size_t) c]);
+  } else {
+    log_line("Expected identifier.");
+    syscall_exit(1);
+    return 0;
+  }
+  return strings_id(&parse_read_buffer[start_index], parse_read_buffer_index - start_index);
+}
+
+void parse_declaration() {
+  char c = parse_char();
+  switch (c) {
+    case 's':
+      if (parse_exactly("truct")) {
+        parse_skip_whitespace1();
+        strings_id_t name = parse_permanent_identifier();
+        parse_skip_whitespace1();
+        strings_id_t type = parse_type();
+        struct_field_t field = { .name = name, .type = type };
+        types_add_struct_field(field);
+      } else {
+        parse_error_expected_declaration_start_keyword();
+      }
+      break;
+    case 'e':
+      if (parse_exactly("num")) {
+      } else {
+        parse_error_expected_declaration_start_keyword();
+      }
+      break;
+    case 'f':
+      if (parse_exactly("n")) {
+      } else {
+        parse_error_expected_declaration_start_keyword();
+      }
+      break;
+    case 'l':
+      if (parse_exactly("et")) {
+      } else {
+        parse_error_expected_declaration_start_keyword();
+      }
+      break;
+    default:
+      parse_error_expected_declaration_start_keyword();
+      break;
+  }
+}
 
 /* How this works:
  *

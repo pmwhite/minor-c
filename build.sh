@@ -8,5 +8,5 @@ gcc -s -O2 -Wall -Werror \
   -Wl,--gc-sections \
   -fdata-sections \
   -fno-builtin \
-  -std=c89 -pedantic \
+  -std=c99 -pedantic \
   main.S main.c -o main
