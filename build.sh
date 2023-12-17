@@ -9,4 +9,4 @@ gcc -s -O2 -Wall -Wextra -Werror \
   -fdata-sections \
   -fno-builtin \
   -std=c99 -pedantic \
-  main.S main.c -o main
+  src/main.S src/main.c -o src/main
