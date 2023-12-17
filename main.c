@@ -279,35 +279,6 @@ strings_id_t strings_id(char* string, size_t length) {
 
 /* -------------------------------------------------------------------------------- */
 
-/* The representation and database format of type info must be driven by the
-   type inference algorithm, since that is the main thing that queries this
-   database.
-
-   Type information in a function originates from data literals, function
-   calls, field accesses, array indexing, and explicit annotations on names. It
-   flows backward through the program until every variable declaration and
-   parameter has a type (so that we can declare the type up front in the
-   generated C code).
-
-   Let's take each of these in turn:
-   - For data literals, we can immediately tell its type based on the literal
-     itself. Integers always have a suffix that says what type they are, and
-     struct literals begin with the name of the struct type, for instance.
-   - For function calls, we need to get all the argument types of the function
-     with that name.
-   - For field accesses, we need a mapping from
-
-   When we access a struct field, say, with the expression "x.y", we require
-   that x's type is known, and then we can determine the type of the entire
-   field access expression by looking at the struct's type.
-*/
-
-/* Types are represented as a pair of some base named type and the kind of
-   type, which indicates roughly whether it is a pointer or not. More
-   precisely, instead of making "pointer" a constructor, we just enumerate all
-   the possible levels of nesting. As a consequence, no program can use more
-   than 6 levels of pointers nesting. */
-
 typedef struct struct_field_t {
   strings_id_t name;
   strings_id_t type;
@@ -440,14 +411,16 @@ u8_t parse_identifier_rest_chars[256];
 
 void parse_init_identifier_chars() {
   size_t c = 'a' - 1;
-  do {
+  while (c <= 'z') {
     parse_identifier_start_chars[c] = 1;
     parse_identifier_rest_chars[c] = 1;
-  } while (c < 'z');
+    c = c + 1;
+  }
   c = '0';
-  do {
+  while (c <= '9') {
     parse_identifier_rest_chars[c] = 1;
-  } while (c < '9');
+    c = c + 1;
+  }
   parse_identifier_rest_chars['_'] = 1;
 }
 
@@ -550,38 +523,41 @@ void parse_declaration() {
   }
 }
 
-/* How this works:
- *
- * We want the language to have _some_ type inference. This means that the
- * source syntax does not necessarily have the types that the C compiler
- * requires. We could construct an "AST" of the final C code with placeholder
- * memory for any missing types; at some point we will have all the types, at
- * which point we can print out the C source code. Another approach is to
- * collect the types on the first pass, and then do a second pass that
- * generates C with full knowledge of the types. The advantage of this approach
- * over the first is that there is no need for placeholder memory (the size of
- * will be either wastefully large or limitingly small).
- *
- * The general pattern is that any information that must flow backwards through
- * the source code (types being one example) can be collected in an initial
- * pass and then used in later passes.
- *
- * Also note that we process each declaration one at a time, and the data
- * necessary for each function will often be small enough to fit in cache,
- * which means that doing multiple passes through the entire source code of a
- * declaration should be relatively cheap.
- *
- * Names: We put a limit on (a) the number of names in each collection of names
- * (namespaces, types, and functions). This is necessary to satisfy the
- * requirement that all allocation happens at the beginning of the program. It
- * also has the benefit that names can be represented as an index into an array
- * of pointers to names. The index only has to be large enough to represent
- * values up to the length of the array, rather than a full 64-bit pointer.
- */
-
 i32_t main(i32_t argc, char* argv[]) {
   (void) argc;
   (void) argv;
+  parse_init_identifier_chars();
   parse_declaration();
+  parse_skip_whitespace();
+  parse_declaration();
+  size_t infos_index = 0;
+  bool_t after_first_struct = false;
+  while (infos_index < STRUCT_INFO_LENGTH) {
+    struct_info_t info = struct_infos[infos_index];
+    if (info.exists) {
+      if (after_first_struct) {
+        log_newline();
+      } else {
+        after_first_struct = true;
+      }
+      log_line(strings_pointers[infos_index]);
+      log_indent();
+      size_t fields_index = 0;
+      while (fields_index < info.field_count) {
+        struct_field_t field = struct_fields[info.first_field_index + fields_index];
+        log_string(strings_pointers[field.name]);
+        log_string(" ");
+        log_string(strings_pointers[field.type]);
+        fields_index = fields_index + 1;
+        if (fields_index == info.field_count) {
+          log_line(".");
+        } else {
+          log_line(",");
+        }
+      }
+      log_dedent();
+    }
+    infos_index = infos_index + 1;
+  }
   return 0;
 }
