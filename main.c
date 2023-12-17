@@ -314,8 +314,9 @@ typedef struct struct_field_t {
 } struct_field_t;
 
 typedef struct struct_info_t {
-  u16_t number_of_fields;
-  struct_field_t* fields;
+  u16_t field_count;
+  u16_t first_field_index;
+  bool_t exists;
 } struct_info_t;
 
 struct_field_t struct_fields[STRUCT_FIELDS_LENGTH];
@@ -387,18 +388,18 @@ char parse_char() {
 bool_t parse_exactly(char* string) {
   size_t i = 0;
   char parsed_char;
-again:
-  parsed_char = parse_char();
-  char string_char = string[i];
-  if (parsed_char == string_char) {
-    if (parsed_char) {
-      i = i + 1;
-      goto again;
-    } else {
+  while (true) {
+    char string_char = string[i];
+    if (!string_char) {
       return true;
     }
-  } else {
-    return false;
+    parsed_char = parse_char();
+    if (parsed_char != string_char) {
+      return false;
+    } else if (!parsed_char) {
+      return true;
+    }
+    i = i + 1;
   }
 }
 
@@ -458,7 +459,8 @@ strings_id_t parse_permanent_identifier() {
       advance_char();
       c = peek_char();
     } while (parse_identifier_rest_chars[(size_t) c]);
-    return strings_id(&parse_read_buffer[start_index], parse_read_buffer_index - start_index);
+    size_t length = parse_read_buffer_index - start_index;
+    return strings_id(&parse_read_buffer[start_index], length);
   } else {
     log_line("Expected identifier.");
     syscall_exit(1);
@@ -480,11 +482,12 @@ strings_id_t parse_type() {
       c = peek_char();
     } while (parse_identifier_rest_chars[(size_t) c]);
   } else {
-    log_line("Expected identifier.");
+    log_line("Expected identifier for type.");
     syscall_exit(1);
     return 0;
   }
-  return strings_id(&parse_read_buffer[start_index], parse_read_buffer_index - start_index);
+  size_t length = parse_read_buffer_index - start_index;
+  return strings_id(&parse_read_buffer[start_index], length);
 }
 
 void parse_declaration() {
@@ -493,11 +496,32 @@ void parse_declaration() {
     case 's':
       if (parse_exactly("truct")) {
         parse_skip_whitespace1();
-        strings_id_t name = parse_permanent_identifier();
-        parse_skip_whitespace1();
-        strings_id_t type = parse_type();
-        struct_field_t field = { .name = name, .type = type };
-        types_add_struct_field(field);
+        strings_id_t struct_name = parse_permanent_identifier();
+        u16_t first_field_index = struct_fields_index;
+        parse_skip_whitespace();
+        while (true) {
+          strings_id_t field_name = parse_permanent_identifier();
+          parse_skip_whitespace1();
+          strings_id_t field_type = parse_type();
+          struct_field_t field = { .name = field_name, .type = field_type };
+          types_add_struct_field(field);
+          parse_skip_whitespace();
+          switch (parse_char()) {
+            case ',':
+              parse_skip_whitespace();
+              break;
+            case '.':
+              struct_infos[struct_name] = (struct_info_t) {
+                .field_count = struct_fields_index - first_field_index,
+                .first_field_index = first_field_index,
+                .exists = true
+              };
+              return;
+            default:
+              log_line("Expected ',' or '.'.");
+              syscall_exit(1);
+          }
+        }
       } else {
         parse_error_expected_declaration_start_keyword();
       }
@@ -556,10 +580,8 @@ void parse_declaration() {
  */
 
 i32_t main(i32_t argc, char* argv[]) {
-  log_line("hello");
-  log_indent();
-  log_line("hello");
-  log_dedent();
-  log_line("hello");
+  (void) argc;
+  (void) argv;
+  parse_declaration();
   return 0;
 }
