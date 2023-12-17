@@ -71,6 +71,12 @@ i64_t syscall_write(i32_t fd, void const* data, u64_t nbytes) {
   return (i64_t) syscall3((void*)1, (void*)(i64_t)fd, (void*)data, (void*)nbytes);
 }
 
+i64_t syscall_open(char const* filename, u64_t flags, u64_t mode) {
+  return (i64_t) syscall3((void*)2, (void*)filename, (void*)(i64_t)flags, (void*)(i64_t)mode);
+}
+
+#define O_RDONLY 00
+
 i64_t syscall_exit(i32_t status) {
   return (i64_t) syscall1((void*)60, (void*)(i64_t)status);
 }
@@ -92,6 +98,19 @@ size_t min_size(size_t a, size_t b) {
     return b;
   }
 }
+
+bool_t string_equal(char* expected, char* actual) {
+  size_t i = 0;
+  while (true) {
+    if (expected[i] != actual[i]) {
+      return false;
+    } else if (!expected[i]) {
+      return true;
+    }
+    i = i + 1;
+  }
+}
+
 
 /* -------------------------------------------------------------------------------- */
 
@@ -122,7 +141,7 @@ void log_maybe_add_indent() {
 }
 
 /* Add a null-terminated string to the log. */
-void log_string(char* s) {
+void log_string(char const* s) {
   size_t s_index = 0;
   log_maybe_add_indent();
   while (log_index < LOG_BUFFER_LEN_MINUS_ONE) {
@@ -146,6 +165,22 @@ void log_lstring(char* s, size_t length) {
     log_buffer[log_index] = c;
     log_index = log_index + 1;
     s_index = s_index + 1;
+  }
+}
+
+void log_size(size_t x) {
+  if (x == 0) {
+    if (log_index < LOG_BUFFER_LEN_MINUS_ONE) {
+      log_buffer[log_index] = '0';
+      log_index = log_index + 1;
+    }
+  } else {
+    while (x > 0 && log_index < LOG_BUFFER_LEN_MINUS_ONE) {
+      char c = (char) (x % 10) + '0';
+      log_buffer[log_index] = c;
+      log_index = log_index + 1;
+      x = x / 10;
+    }
   }
 }
 
@@ -309,22 +344,37 @@ void types_add_struct_field(struct_field_t field) {
 char parse_read_buffer[1024];
 size_t parse_read_buffer_index = 0;
 size_t parse_read_buffer_length = 0;
+size_t parse_line = 1;
+size_t parse_column = 1;
+i32_t parse_current_file_fd = 0;
+char const* parse_current_filename;
+bool_t parse_reached_end_of_file = false;
+
+void parse_log_location() {
+  log_string(parse_current_filename);
+  log_string(":");
+  log_size(parse_line);
+  log_string(":");
+  log_size(parse_column);
+  log_string(": ");
+}
 
 /* Returns the next character in the stream. If the current buffer of
    characters has been exhausted, we perform a blocking read on stdin to refill
    it. If the read fail, we abort. A return value of 0 indicates that there are
    no more characters to get. */
 char peek_char() {
+  char c;
   if (parse_read_buffer_index < parse_read_buffer_length) {
-    char c = parse_read_buffer[parse_read_buffer_index];
-    return c;
+    c = parse_read_buffer[parse_read_buffer_index];
   } else {
-    size_t read_result = syscall_read(0, parse_read_buffer, 1024);
+    size_t read_result = syscall_read(parse_current_file_fd, parse_read_buffer, 1024);
     if (read_result > 0) {
       parse_read_buffer_length = read_result;
       parse_read_buffer_index = 0;
-      return parse_read_buffer[0];
+      c = parse_read_buffer[0];
     } else if (read_result == 0) {
+      parse_reached_end_of_file = true;
       return 0;
     } else {
       log_string("Got unix error code while trying to read stdin.");
@@ -332,12 +382,17 @@ char peek_char() {
       return 0;
     }
   }
+  return c;
 }
 
 /* Skip past the current character. The behavior is undefined if the stream is
    already exhausted, so it is necessary to have first gotten a non-zero return
    value from peek_char. */
 void advance_char() {
+  char c = parse_read_buffer[parse_read_buffer_index];
+  bool_t is_newline = c == '\n';
+  parse_column = parse_column * is_newline + 1;
+  parse_line = parse_line + is_newline * 1;
   parse_read_buffer_index = parse_read_buffer_index + 1;
 }
 
@@ -396,13 +451,15 @@ void parse_skip_whitespace1() {
   if (parse_is_whitespace(parse_char())) {
     parse_skip_whitespace();
   } else {
+    parse_log_location();
     log_line("Expected whitespace.");
     syscall_exit(1);
   }
 }
 
 void parse_error_expected_declaration_start_keyword() {
-    log_line("Expected one of 'struct', 'enum', 'fn', or 'let' to begin declaration.");
+    parse_log_location();
+    log_line("Expected one of 'struct', 'fn', or 'let' to begin declaration.");
     syscall_exit(1);
 }
 
@@ -435,6 +492,7 @@ strings_id_t parse_permanent_identifier() {
     size_t length = parse_read_buffer_index - start_index;
     return strings_id(&parse_read_buffer[start_index], length);
   } else {
+    parse_log_location();
     log_line("Expected identifier.");
     syscall_exit(1);
     return 0;
@@ -455,6 +513,7 @@ strings_id_t parse_type() {
       c = peek_char();
     } while (parse_identifier_rest_chars[(size_t) c]);
   } else {
+    parse_log_location();
     log_line("Expected identifier for type.");
     syscall_exit(1);
     return 0;
@@ -491,28 +550,11 @@ void parse_declaration() {
               };
               return;
             default:
+              parse_log_location();
               log_line("Expected ',' or '.'.");
               syscall_exit(1);
           }
         }
-      } else {
-        parse_error_expected_declaration_start_keyword();
-      }
-      break;
-    case 'e':
-      if (parse_exactly("num")) {
-      } else {
-        parse_error_expected_declaration_start_keyword();
-      }
-      break;
-    case 'f':
-      if (parse_exactly("n")) {
-      } else {
-        parse_error_expected_declaration_start_keyword();
-      }
-      break;
-    case 'l':
-      if (parse_exactly("et")) {
       } else {
         parse_error_expected_declaration_start_keyword();
       }
@@ -523,41 +565,79 @@ void parse_declaration() {
   }
 }
 
-i32_t main(i32_t argc, char* argv[]) {
-  (void) argc;
-  (void) argv;
-  parse_init_identifier_chars();
-  parse_declaration();
-  parse_skip_whitespace();
-  parse_declaration();
-  size_t infos_index = 0;
-  bool_t after_first_struct = false;
-  while (infos_index < STRUCT_INFO_LENGTH) {
-    struct_info_t info = struct_infos[infos_index];
-    if (info.exists) {
-      if (after_first_struct) {
-        log_newline();
-      } else {
-        after_first_struct = true;
-      }
-      log_line(strings_pointers[infos_index]);
-      log_indent();
-      size_t fields_index = 0;
-      while (fields_index < info.field_count) {
-        struct_field_t field = struct_fields[info.first_field_index + fields_index];
-        log_string(strings_pointers[field.name]);
-        log_string(" ");
-        log_string(strings_pointers[field.type]);
-        fields_index = fields_index + 1;
-        if (fields_index == info.field_count) {
-          log_line(".");
-        } else {
-          log_line(",");
-        }
-      }
-      log_dedent();
+void parse_file(char const* filename) {
+  i32_t fd = syscall_open(filename, O_RDONLY, 0);
+  if (fd >= 0) {
+    parse_current_file_fd = fd;
+    parse_current_filename = filename;
+    parse_skip_whitespace();
+    while (!parse_reached_end_of_file) {
+      parse_declaration();
+      parse_skip_whitespace();
     }
-    infos_index = infos_index + 1;
+  } else {
+    log_string("Got unix error code while trying to open \"");
+    log_string(filename);
+    log_line("\".");
+    syscall_exit(1);
+  }
+}
+
+i32_t main(i32_t argc, char* argv[]) {
+  if (argc < 2) {
+    log_line("Usage: <exe> command");
+    log_line("Commands:");
+    log_indent();
+    log_line("show-structs file...     List all the struct definitions in the provided files.");
+    log_dedent();
+    return 0;
+  }
+  char* command = argv[1];
+  if (string_equal("show-structs", command)) {
+    if (argc < 3) {
+      log_line("No source files provided.");
+      syscall_exit(1);
+    }
+    parse_init_identifier_chars();
+    i32_t arg_index = 2;
+    while (arg_index < argc) {
+      parse_file(argv[arg_index]);
+      arg_index = arg_index + 1;
+    }
+    size_t infos_index = 0;
+    bool_t after_first_struct = false;
+    while (infos_index < STRUCT_INFO_LENGTH) {
+      struct_info_t info = struct_infos[infos_index];
+      if (info.exists) {
+        if (after_first_struct) {
+          log_newline();
+        } else {
+          after_first_struct = true;
+        }
+        log_line(strings_pointers[infos_index]);
+        log_indent();
+        size_t fields_index = 0;
+        while (fields_index < info.field_count) {
+          struct_field_t field = struct_fields[info.first_field_index + fields_index];
+          log_string(strings_pointers[field.name]);
+          log_string(" ");
+          log_string(strings_pointers[field.type]);
+          fields_index = fields_index + 1;
+          if (fields_index == info.field_count) {
+            log_line(".");
+          } else {
+            log_line(",");
+          }
+        }
+        log_dedent();
+      }
+      infos_index = infos_index + 1;
+    }
+  } else {
+    log_string("Unknown command \"");
+    log_string(command);
+    log_line("\".");
+    syscall_exit(1);
   }
   return 0;
 }
