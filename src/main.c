@@ -169,18 +169,16 @@ void log_lstring(char* s, size_t length) {
 }
 
 void log_size(size_t x) {
-  if (x == 0) {
-    if (log_index < LOG_BUFFER_LEN_MINUS_ONE) {
-      log_buffer[log_index] = '0';
-      log_index = log_index + 1;
-    }
-  } else {
-    while (x > 0 && log_index < LOG_BUFFER_LEN_MINUS_ONE) {
-      char c = (char) (x % 10) + '0';
-      log_buffer[log_index] = c;
-      log_index = log_index + 1;
-      x = x / 10;
-    }
+  size_t magnitude = 1;
+  while (x / magnitude >= 10) {
+    magnitude = magnitude * 10;
+  }
+  while (magnitude > 0 && log_index < LOG_BUFFER_LEN_MINUS_ONE) {
+    char c = (char) (x / magnitude) + '0';
+    log_buffer[log_index] = c;
+    log_index = log_index + 1;
+    x = x % magnitude;
+    magnitude = magnitude / 10;
   }
 }
 
@@ -391,7 +389,7 @@ char peek_char() {
 void advance_char() {
   char c = parse_read_buffer[parse_read_buffer_index];
   bool_t is_newline = c == '\n';
-  parse_column = parse_column * is_newline + 1;
+  parse_column = parse_column * !is_newline + 1;
   parse_line = parse_line + is_newline * 1;
   parse_read_buffer_index = parse_read_buffer_index + 1;
 }
@@ -533,7 +531,7 @@ void parse_declaration() {
         parse_skip_whitespace();
         while (true) {
           strings_id_t field_name = parse_permanent_identifier();
-          parse_skip_whitespace1();
+          parse_skip_whitespace();
           strings_id_t field_type = parse_type();
           struct_field_t field = { .name = field_name, .type = field_type };
           types_add_struct_field(field);
@@ -575,6 +573,9 @@ void parse_file(char const* filename) {
       parse_declaration();
       parse_skip_whitespace();
     }
+    parse_current_file_fd = 0;
+    parse_current_filename = 0;
+    parse_reached_end_of_file = false;
   } else {
     log_string("Got unix error code while trying to open \"");
     log_string(filename);
