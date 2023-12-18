@@ -540,7 +540,7 @@ void parse_declaration() {
             case ',':
               parse_skip_whitespace();
               break;
-            case '.':
+            case ';':
               struct_infos[struct_name] = (struct_info_t) {
                 .field_count = struct_fields_index - first_field_index,
                 .first_field_index = first_field_index,
@@ -549,7 +549,7 @@ void parse_declaration() {
               return;
             default:
               parse_log_location();
-              log_line("Expected ',' or '.'.");
+              log_line("Expected ',' or ';'.");
               syscall_exit(1);
           }
         }
@@ -625,7 +625,7 @@ i32_t main(i32_t argc, char* argv[]) {
           log_string(strings_pointers[field.type]);
           fields_index = fields_index + 1;
           if (fields_index == info.field_count) {
-            log_line(".");
+            log_line(";");
           } else {
             log_line(",");
           }
