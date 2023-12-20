@@ -11,7 +11,7 @@
 #define STRINGS_DATA_LENGTH HUNDRED_MB
 #define STRUCT_FIELDS_LENGTH MAX_U16
 #define PARSE_TYPE_BUFFER_LENGTH MAX_U16
-#define PARSE_READ_BUFFER_CAPACITY 1024
+#define PARSE_READ_BUFFER_CAPACITY TEN_MB
 #define MAX_LINE_LENGTH_FOR_ERRORS 120
 #define NAMES_IN_SCOPE_LENGTH MAX_U16
 #define STRINGS_ID_MAP_LENGTH MAX_U16
@@ -233,7 +233,6 @@ void log_line(char* s) {
  * hashmap.
  * -------------------------------------------------------------------------------- */
 
-/* The total amount of string data must not exceed 100 MB = 104857600 bytes. */
 char strings_data[STRINGS_DATA_LENGTH] = {0};
 size_t strings_data_index = 0;
 
@@ -363,9 +362,7 @@ size_t parse_read_buffer_length = 0;
 size_t parse_line = 1;
 size_t parse_column = 1;
 size_t parse_start_of_line = 0;
-i32_t parse_current_file_fd = 0;
 char const* parse_current_filename;
-bool_t parse_reached_end_of_file = false;
 
 void parse_log_location() {
   log_string("\x1b[1m");
@@ -376,35 +373,6 @@ void parse_log_location() {
   log_size(parse_column);
   log_string(": ");
   log_string("\x1b[22m");
-}
-
-bool_t parse_shift_and_refill() {
-  /* Shift the current line of code into the beginning of the buffer before refilling again. */
-  size_t current_line_length = parse_read_buffer_length - parse_start_of_line;
-  size_t amount_to_save = min_size(current_line_length, MAX_LINE_LENGTH_FOR_ERRORS);
-  size_t new_start_of_line = parse_start_of_line + current_line_length - amount_to_save;
-  parse_start_of_line = 0;
-  size_t i = 0;
-  while (i < amount_to_save) {
-    parse_read_buffer[i] = parse_read_buffer[new_start_of_line + i];
-    i = i + 1;
-  }
-  parse_read_buffer_length = amount_to_save;
-  /* Attempt to read bytes into the remaining unfilled part of the buffer. */
-  size_t remaining_capacity = PARSE_READ_BUFFER_CAPACITY - parse_read_buffer_length;
-  size_t read_result = syscall_read(parse_current_file_fd, parse_read_buffer, remaining_capacity);
-  if (read_result > 0) {
-    parse_read_buffer_length = read_result;
-    parse_read_buffer_index = 0;
-    return true;
-  } else if (read_result == 0) {
-    parse_reached_end_of_file = true;
-    return false;
-  } else {
-    log_string("Got unix error code while trying to read stdin.");
-    syscall_exit(1);
-    return false;
-  }
 }
 
 void parse_log_current_line_with_location_marker() {
@@ -447,14 +415,11 @@ void parse_log_current_line_with_location_marker() {
    it. If the read fail, we abort. A return value of 0 indicates that there are
    no more characters to get. */
 char peek_char() {
-  char c;
-  if (parse_read_buffer_index >= parse_read_buffer_length) {
-    if (!parse_shift_and_refill()) {
-      return 0;
-    }
+  if (parse_read_buffer_index < parse_read_buffer_length) {
+    return parse_read_buffer[parse_read_buffer_index];
+  } else {
+    return 0;
   }
-  c = parse_read_buffer[parse_read_buffer_index];
-  return c;
 }
 
 /* Skip past the current character. The behavior is undefined if the stream is
@@ -719,16 +684,47 @@ finished_arg_list:
 void parse_file(char const* filename) {
   i32_t fd = syscall_open(filename, O_RDONLY, 0);
   if (fd >= 0) {
-    parse_current_file_fd = fd;
+    bool_t reached_end_of_file = false;
+    while (true) {
+      size_t remaining_capacity = PARSE_READ_BUFFER_CAPACITY - parse_read_buffer_length;
+      if (remaining_capacity == 0) {
+        break;
+      }
+      i64_t read_result = syscall_read(fd, &parse_read_buffer[parse_read_buffer_length], remaining_capacity);
+      if (read_result > 0) {
+        parse_read_buffer_length = parse_read_buffer_length + read_result;
+      } else if (read_result == 0) {
+        reached_end_of_file = true;
+        break;
+      } else {
+        log_string("Got unix error code while trying to read file \"");
+        log_string(filename);
+        log_line("\".");
+        syscall_exit(1);
+      }
+    }
+    if (!reached_end_of_file) {
+      char single_char[1];
+      i64_t read_result = syscall_read(fd, single_char, 1);
+      if (read_result > 0) {
+        log_string("Reached 10 MB file size limit while reading file \"");
+        log_string(filename);
+        log_line("\".");
+        syscall_exit(1);
+      } else if (read_result < 0) {
+        log_string("Got unix error code while trying to read file \"");
+        log_string(filename);
+        log_line("\".");
+        syscall_exit(1);
+      }
+    }
     parse_current_filename = filename;
     parse_skip_whitespace();
-    while (!parse_reached_end_of_file) {
+    while (peek_char()) {
       parse_declaration();
       parse_skip_whitespace();
     }
-    parse_current_file_fd = 0;
     parse_current_filename = 0;
-    parse_reached_end_of_file = false;
   } else {
     log_string("Got unix error code while trying to open \"");
     log_string(filename);
