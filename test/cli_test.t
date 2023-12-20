@@ -1,7 +1,7 @@
 Running the program with no argument yields some help text.
 
   $ $MAIN
-  Usage: <exe> command [options] [file...]
+  Usage: <exe> command file...
   Commands:
     show-structs     List all the struct definitions in the provided files.
     show-fns         List all the function definitions in the provided files.

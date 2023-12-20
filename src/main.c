@@ -115,19 +115,6 @@ bool_t string_equal(char* expected, char* actual) {
 /* -------------------------------------------------------------------------------- */
 
 /* --------------------------------------------------------------------------------
- * COMMAND-LINE FLAGS
- *
- * We surface the flags passed by the user as global variables that can be
- * checked during any stage of compilation.
- * -------------------------------------------------------------------------------- */
-
-bool_t flag_colors = true;
-char* flag_files;
-size_t flag_files_length;
-
-/* -------------------------------------------------------------------------------- */
-
-/* --------------------------------------------------------------------------------
  * LOGGING
  *
  * We use a fixed size buffer to format each line. Anything that would be
@@ -365,30 +352,23 @@ size_t parse_start_of_line = 0;
 char const* parse_current_filename;
 
 void parse_log_location() {
-  log_string("\x1b[1m");
   log_string(parse_current_filename);
   log_string(":");
   log_size(parse_line);
   log_string(":");
   log_size(parse_column);
   log_string(": ");
-  log_string("\x1b[22m");
 }
 
 void parse_log_current_line_with_location_marker() {
-  log_string("\x1b[1m");
   size_t line_number_length = log_size(parse_line);
   log_string(" | ");
-  log_string("\x1b[22m");
   size_t code_line_error_position = parse_read_buffer_index - parse_start_of_line;
   size_t end_of_line = parse_read_buffer_index;
   size_t end_of_line_limit = min_size(parse_start_of_line + MAX_LINE_LENGTH_FOR_ERRORS, parse_read_buffer_length);
   bool_t reached_end_of_line = false;
   while (end_of_line < end_of_line_limit) {
     if (parse_read_buffer[end_of_line] == '\n') {
-      if (parse_read_buffer_index < end_of_line) {
-        end_of_line = end_of_line - 1;
-      }
       reached_end_of_line = true;
       break;
     }
@@ -406,7 +386,7 @@ void parse_log_current_line_with_location_marker() {
     log_string(" ");
     i = i + 1;
   }
-  log_string("\x1b[1m^\x1b[22m");
+  log_string("^");
   log_newline();
 }
 
@@ -532,6 +512,7 @@ strings_id_t parse_permanent_identifier() {
     size_t length = parse_read_buffer_index - start_index;
     return strings_id(&parse_read_buffer[start_index], length);
   } else {
+    advance_char();
     parse_log_location();
     log_line("Expected identifier.");
     parse_log_current_line_with_location_marker();
@@ -554,6 +535,7 @@ strings_id_t parse_type() {
       c = peek_char();
     } while (parse_identifier_rest_chars[(size_t) c]);
   } else {
+    advance_char();
     parse_log_location();
     log_line("Expected identifier for type.");
     parse_log_current_line_with_location_marker();
@@ -735,7 +717,7 @@ void parse_file(char const* filename) {
 
 i32_t main(i32_t argc, char* argv[]) {
   if (argc < 2) {
-    log_line("Usage: <exe> command [options] [file...]");
+    log_line("Usage: <exe> command file...");
     log_line("Commands:");
     log_indent();
     log_line("show-structs     List all the struct definitions in the provided files.");

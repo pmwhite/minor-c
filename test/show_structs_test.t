@@ -46,17 +46,17 @@ When bad syntax is used, the compiler responds with informative error messages.
   $ test <<\.
   > struct hello world;
   > .
-  \x1b[1mbad.minc:1:19: \x1b[22mExpected identifier for type. (esc)
-  \x1b[1m1 | \x1b[22mstruct hello world (esc)
-                       \x1b[1m^\x1b[22m (esc)
+  bad.minc:1:20: Expected identifier for type.
+  1 | struct hello world;
+                        ^
   [1]
 
   $ test <<\.
   > struct hello;
   > .
-  \x1b[1mbad.minc:1:13: \x1b[22mExpected identifier. (esc)
-  \x1b[1m1 | \x1b[22mstruct hello (esc)
-                 \x1b[1m^\x1b[22m (esc)
+  bad.minc:1:14: Expected identifier.
+  1 | struct hello;
+                  ^
   [1]
 
   $ test <<\.
@@ -64,9 +64,9 @@ When bad syntax is used, the compiler responds with informative error messages.
   >   x i32
   >   y i32;
   > .
-  \x1b[1mbad.minc:3:4: \x1b[22mExpected ',' or ';'. (esc)
-  \x1b[1m3 | \x1b[22m  y i32 (esc)
-        \x1b[1m^\x1b[22m (esc)
+  bad.minc:3:4: Expected ',' or ';'.
+  3 |   y i32;
+        ^
   [1]
 
   $ test <<\.
@@ -74,15 +74,15 @@ When bad syntax is used, the compiler responds with informative error messages.
   >   x i32,,
   >   y i32;
   > .
-  \x1b[1mbad.minc:2:9: \x1b[22mExpected identifier. (esc)
-  \x1b[1m2 | \x1b[22m  x i32, (esc)
-             \x1b[1m^\x1b[22m (esc)
+  bad.minc:2:10: Expected identifier.
+  2 |   x i32,,
+              ^
   [1]
 
   $ test <<\.
   > struct hello;
   > .
-  \x1b[1mbad.minc:1:13: \x1b[22mExpected identifier. (esc)
-  \x1b[1m1 | \x1b[22mstruct hello (esc)
-                 \x1b[1m^\x1b[22m (esc)
+  bad.minc:1:14: Expected identifier.
+  1 | struct hello;
+                  ^
   [1]
