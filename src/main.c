@@ -8,14 +8,15 @@
 #define TEN_MB 10485760 
 #define HUNDRED_MB 104857600
 #define MAX_U16 65536
-
 #define STRINGS_DATA_LENGTH HUNDRED_MB
-#define STRINGS_POINTERS_LENGTH MAX_U16
-
 #define STRUCT_FIELDS_LENGTH MAX_U16
-#define STRUCT_INFO_LENGTH MAX_U16
-
 #define PARSE_TYPE_BUFFER_LENGTH MAX_U16
+#define PARSE_READ_BUFFER_CAPACITY 1024
+#define MAX_LINE_LENGTH_FOR_ERRORS 120
+#define NAMES_IN_SCOPE_LENGTH MAX_U16
+#define STRINGS_ID_MAP_LENGTH MAX_U16
+#define MAX_FN_ARITY 14
+#define MAX_LOCAL_VARIABLES 1024
 
 /* -------------------------------------------------------------------------------- */
 
@@ -43,10 +44,9 @@ typedef unsigned long int u64_t;
 
 typedef unsigned long int size_t;
 
-typedef enum bool_t {
-  false,
-  true
-} bool_t;
+typedef u8_t bool_t;
+#define false 0
+#define true 1
 
 /* -------------------------------------------------------------------------------- */
 
@@ -115,6 +115,19 @@ bool_t string_equal(char* expected, char* actual) {
 /* -------------------------------------------------------------------------------- */
 
 /* --------------------------------------------------------------------------------
+ * COMMAND-LINE FLAGS
+ *
+ * We surface the flags passed by the user as global variables that can be
+ * checked during any stage of compilation.
+ * -------------------------------------------------------------------------------- */
+
+bool_t flag_colors = true;
+char* flag_files;
+size_t flag_files_length;
+
+/* -------------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------------
  * LOGGING
  *
  * We use a fixed size buffer to format each line. Anything that would be
@@ -127,16 +140,16 @@ const size_t LOG_BUFFER_LEN_MINUS_ONE = 1024;
 char log_buffer[1023];
 size_t log_index = 0;
 size_t log_indent_count = 0;
-bool_t at_start_of_line = true;
+bool_t log_at_start_of_line = true;
 
 void log_maybe_add_indent() {
   size_t indent_count = min_size(log_indent_count, LOG_BUFFER_LEN_MINUS_ONE);
-  if (at_start_of_line) {
+  if (log_at_start_of_line) {
     while (log_index < indent_count) {
       log_buffer[log_index] = ' ';
       log_index = log_index + 1;
     }
-    at_start_of_line = false;
+    log_at_start_of_line = false;
   }
 }
 
@@ -168,11 +181,15 @@ void log_lstring(char* s, size_t length) {
   }
 }
 
-void log_size(size_t x) {
+/* Prints a size_t to the log and returns the number of characters written,
+ * which may be useful when trying to align subsequent lines based on the
+ * length of the output number. */
+size_t log_size(size_t x) {
   size_t magnitude = 1;
   while (x / magnitude >= 10) {
     magnitude = magnitude * 10;
   }
+  size_t original_log_index = log_index;
   while (magnitude > 0 && log_index < LOG_BUFFER_LEN_MINUS_ONE) {
     char c = (char) (x / magnitude) + '0';
     log_buffer[log_index] = c;
@@ -180,6 +197,7 @@ void log_size(size_t x) {
     x = x % magnitude;
     magnitude = magnitude / 10;
   }
+  return log_index - original_log_index;
 }
 
 void log_newline() {
@@ -187,7 +205,7 @@ void log_newline() {
   log_index = log_index + 1;
   syscall_write(2, log_buffer, log_index);
   log_index = 0;
-  at_start_of_line = true;
+  log_at_start_of_line = true;
 }
 
 void log_indent() {
@@ -221,7 +239,7 @@ size_t strings_data_index = 0;
 
 
 /* The index into this array must be representable by 16 bits. */
-char* strings_pointers[STRINGS_POINTERS_LENGTH] = {0};
+char* strings_pointers[STRINGS_ID_MAP_LENGTH];
 
 typedef u16_t strings_id_t;
 
@@ -325,7 +343,7 @@ typedef struct struct_info_t {
 
 struct_field_t struct_fields[STRUCT_FIELDS_LENGTH];
 size_t struct_fields_index = 0;
-struct_info_t struct_infos[STRUCT_INFO_LENGTH];
+struct_info_t struct_infos[STRINGS_ID_MAP_LENGTH];
 
 void types_add_struct_field(struct_field_t field) {
   if (struct_fields_index < STRUCT_FIELDS_LENGTH) {
@@ -339,22 +357,89 @@ void types_add_struct_field(struct_field_t field) {
   }
 }
 
-char parse_read_buffer[1024];
+char parse_read_buffer[PARSE_READ_BUFFER_CAPACITY];
 size_t parse_read_buffer_index = 0;
 size_t parse_read_buffer_length = 0;
 size_t parse_line = 1;
 size_t parse_column = 1;
+size_t parse_start_of_line = 0;
 i32_t parse_current_file_fd = 0;
 char const* parse_current_filename;
 bool_t parse_reached_end_of_file = false;
 
 void parse_log_location() {
+  log_string("\x1b[1m");
   log_string(parse_current_filename);
   log_string(":");
   log_size(parse_line);
   log_string(":");
   log_size(parse_column);
   log_string(": ");
+  log_string("\x1b[22m");
+}
+
+bool_t parse_shift_and_refill() {
+  /* Shift the current line of code into the beginning of the buffer before refilling again. */
+  size_t current_line_length = parse_read_buffer_length - parse_start_of_line;
+  size_t amount_to_save = min_size(current_line_length, MAX_LINE_LENGTH_FOR_ERRORS);
+  size_t new_start_of_line = parse_start_of_line + current_line_length - amount_to_save;
+  parse_start_of_line = 0;
+  size_t i = 0;
+  while (i < amount_to_save) {
+    parse_read_buffer[i] = parse_read_buffer[new_start_of_line + i];
+    i = i + 1;
+  }
+  parse_read_buffer_length = amount_to_save;
+  /* Attempt to read bytes into the remaining unfilled part of the buffer. */
+  size_t remaining_capacity = PARSE_READ_BUFFER_CAPACITY - parse_read_buffer_length;
+  size_t read_result = syscall_read(parse_current_file_fd, parse_read_buffer, remaining_capacity);
+  if (read_result > 0) {
+    parse_read_buffer_length = read_result;
+    parse_read_buffer_index = 0;
+    return true;
+  } else if (read_result == 0) {
+    parse_reached_end_of_file = true;
+    return false;
+  } else {
+    log_string("Got unix error code while trying to read stdin.");
+    syscall_exit(1);
+    return false;
+  }
+}
+
+void parse_log_current_line_with_location_marker() {
+  log_string("\x1b[1m");
+  size_t line_number_length = log_size(parse_line);
+  log_string(" | ");
+  log_string("\x1b[22m");
+  size_t code_line_error_position = parse_read_buffer_index - parse_start_of_line;
+  size_t end_of_line = parse_read_buffer_index;
+  size_t end_of_line_limit = min_size(parse_start_of_line + MAX_LINE_LENGTH_FOR_ERRORS, parse_read_buffer_length);
+  bool_t reached_end_of_line = false;
+  while (end_of_line < end_of_line_limit) {
+    if (parse_read_buffer[end_of_line] == '\n') {
+      if (parse_read_buffer_index < end_of_line) {
+        end_of_line = end_of_line - 1;
+      }
+      reached_end_of_line = true;
+      break;
+    }
+    end_of_line = end_of_line + 1;
+  }
+  size_t code_line_length = end_of_line - parse_start_of_line;
+  log_lstring(&parse_read_buffer[parse_start_of_line], code_line_length);
+  if (!reached_end_of_line) {
+    log_string("...");
+  }
+  log_newline();
+  size_t error_position_minus_one = line_number_length + 3 + code_line_error_position - 1;
+  size_t i = 0;
+  while (i < error_position_minus_one) {
+    log_string(" ");
+    i = i + 1;
+  }
+  log_string("\x1b[1m^\x1b[22m");
+  log_newline();
 }
 
 /* Returns the next character in the stream. If the current buffer of
@@ -363,23 +448,12 @@ void parse_log_location() {
    no more characters to get. */
 char peek_char() {
   char c;
-  if (parse_read_buffer_index < parse_read_buffer_length) {
-    c = parse_read_buffer[parse_read_buffer_index];
-  } else {
-    size_t read_result = syscall_read(parse_current_file_fd, parse_read_buffer, 1024);
-    if (read_result > 0) {
-      parse_read_buffer_length = read_result;
-      parse_read_buffer_index = 0;
-      c = parse_read_buffer[0];
-    } else if (read_result == 0) {
-      parse_reached_end_of_file = true;
-      return 0;
-    } else {
-      log_string("Got unix error code while trying to read stdin.");
-      syscall_exit(1);
+  if (parse_read_buffer_index >= parse_read_buffer_length) {
+    if (!parse_shift_and_refill()) {
       return 0;
     }
   }
+  c = parse_read_buffer[parse_read_buffer_index];
   return c;
 }
 
@@ -392,6 +466,7 @@ void advance_char() {
   parse_column = parse_column * !is_newline + 1;
   parse_line = parse_line + is_newline * 1;
   parse_read_buffer_index = parse_read_buffer_index + 1;
+  parse_start_of_line = parse_start_of_line * !is_newline + parse_read_buffer_index * is_newline;
 }
 
 /* Peek the next character and advance past it if non-zero. We do not abort if
@@ -451,13 +526,15 @@ void parse_skip_whitespace1() {
   } else {
     parse_log_location();
     log_line("Expected whitespace.");
+    parse_log_current_line_with_location_marker();
     syscall_exit(1);
   }
 }
 
 void parse_error_expected_declaration_start_keyword() {
     parse_log_location();
-    log_line("Expected one of 'struct', 'fn', or 'let' to begin declaration.");
+    log_line("Expected either 'struct' or 'fn' to begin declaration.");
+    parse_log_current_line_with_location_marker();
     syscall_exit(1);
 }
 
@@ -492,6 +569,7 @@ strings_id_t parse_permanent_identifier() {
   } else {
     parse_log_location();
     log_line("Expected identifier.");
+    parse_log_current_line_with_location_marker();
     syscall_exit(1);
     return 0;
   }
@@ -513,6 +591,7 @@ strings_id_t parse_type() {
   } else {
     parse_log_location();
     log_line("Expected identifier for type.");
+    parse_log_current_line_with_location_marker();
     syscall_exit(1);
     return 0;
   }
@@ -520,42 +599,116 @@ strings_id_t parse_type() {
   return strings_id(&parse_read_buffer[start_index], length);
 }
 
+typedef struct parse_local_variable_t {
+  strings_id_t name;
+  strings_id_t type;
+} parse_local_variable_t;
+
+parse_local_variable_t parse_local_variables[MAX_LOCAL_VARIABLES];
+size_t parse_local_variables_index = 0;
+
+typedef struct parse_fn_signature_t {
+  bool_t exists;
+  u16_t arity;
+  strings_id_t arg_names[14];
+  strings_id_t arg_types[14];
+  strings_id_t return_type;
+} parse_fn_signature_t;
+
+parse_fn_signature_t parse_fn_signatures[STRINGS_ID_MAP_LENGTH];
+
 void parse_declaration() {
   char c = parse_char();
   switch (c) {
     case 's':
-      if (parse_exactly("truct")) {
-        parse_skip_whitespace1();
-        strings_id_t struct_name = parse_permanent_identifier();
-        u16_t first_field_index = struct_fields_index;
+      if (!parse_exactly("truct")) {
+        parse_error_expected_declaration_start_keyword();
+      }
+      parse_skip_whitespace1();
+      strings_id_t struct_name = parse_permanent_identifier();
+      u16_t first_field_index = struct_fields_index;
+      parse_skip_whitespace();
+      while (true) {
+        strings_id_t field_name = parse_permanent_identifier();
         parse_skip_whitespace();
+        strings_id_t field_type = parse_type();
+        struct_field_t field = { .name = field_name, .type = field_type };
+        types_add_struct_field(field);
+        parse_skip_whitespace();
+        switch (parse_char()) {
+          case ',':
+            parse_skip_whitespace();
+            break;
+          case ';':
+            struct_infos[struct_name] = (struct_info_t) {
+              .field_count = struct_fields_index - first_field_index,
+              .first_field_index = first_field_index,
+              .exists = true
+            };
+            return;
+          default:
+            parse_log_location();
+            log_line("Expected ',' or ';'.");
+            parse_log_current_line_with_location_marker();
+            syscall_exit(1);
+        }
+      }
+      break;
+    case 'f':
+      if (!parse_exactly("n")) {
+        parse_error_expected_declaration_start_keyword();
+      }
+      parse_skip_whitespace1();
+      strings_id_t fn_name = parse_permanent_identifier();
+      parse_skip_whitespace();
+      if (!parse_exactly("(")) {
+        parse_log_location();
+        log_line("Expected '(' to begin argument list.");
+        parse_log_current_line_with_location_marker();
+        syscall_exit(1);
+      }
+      char first_char_of_arg_list = peek_char();
+      parse_fn_signature_t signature = {0};
+      signature.exists = true;
+      if (first_char_of_arg_list != ')') {
         while (true) {
-          strings_id_t field_name = parse_permanent_identifier();
+          signature.arg_names[signature.arity] = parse_permanent_identifier();
           parse_skip_whitespace();
-          strings_id_t field_type = parse_type();
-          struct_field_t field = { .name = field_name, .type = field_type };
-          types_add_struct_field(field);
+          signature.arg_types[signature.arity] = parse_type();
+          signature.arity = signature.arity + 1;
           parse_skip_whitespace();
           switch (parse_char()) {
             case ',':
               parse_skip_whitespace();
               break;
-            case ';':
-              struct_infos[struct_name] = (struct_info_t) {
-                .field_count = struct_fields_index - first_field_index,
-                .first_field_index = first_field_index,
-                .exists = true
-              };
-              return;
+            case ')':
+              goto finished_arg_list;
+              break;
             default:
               parse_log_location();
-              log_line("Expected ',' or ';'.");
+              log_line("Expected ',' or ')'.");
+              parse_log_current_line_with_location_marker();
               syscall_exit(1);
+              break;
           }
         }
-      } else {
-        parse_error_expected_declaration_start_keyword();
       }
+finished_arg_list:
+      parse_skip_whitespace();
+      if (!parse_exactly("{")) {
+        parse_log_location();
+        log_line("Expected '{' after argument list to begin function body.");
+        parse_log_current_line_with_location_marker();
+        syscall_exit(1);
+      }
+      parse_skip_whitespace();
+      if (!parse_exactly("}")) {
+        parse_log_location();
+        log_line("Expected '}' to finish function body.");
+        parse_log_current_line_with_location_marker();
+        syscall_exit(1);
+      }
+      parse_fn_signatures[fn_name] = signature;
       break;
     default:
       parse_error_expected_declaration_start_keyword();
@@ -586,10 +739,11 @@ void parse_file(char const* filename) {
 
 i32_t main(i32_t argc, char* argv[]) {
   if (argc < 2) {
-    log_line("Usage: <exe> command");
+    log_line("Usage: <exe> command [options] [file...]");
     log_line("Commands:");
     log_indent();
-    log_line("show-structs file...     List all the struct definitions in the provided files.");
+    log_line("show-structs     List all the struct definitions in the provided files.");
+    log_line("show-fns         List all the function definitions in the provided files.");
     log_dedent();
     return 0;
   }
@@ -607,7 +761,7 @@ i32_t main(i32_t argc, char* argv[]) {
     }
     size_t infos_index = 0;
     bool_t after_first_struct = false;
-    while (infos_index < STRUCT_INFO_LENGTH) {
+    while (infos_index < STRINGS_ID_MAP_LENGTH) {
       struct_info_t info = struct_infos[infos_index];
       if (info.exists) {
         if (after_first_struct) {
@@ -633,6 +787,38 @@ i32_t main(i32_t argc, char* argv[]) {
         log_dedent();
       }
       infos_index = infos_index + 1;
+    }
+  } else if (string_equal("show-fns", command)) {
+    if (argc < 3) {
+      log_line("No source files provided.");
+      syscall_exit(1);
+    }
+    parse_init_identifier_chars();
+    i32_t arg_index = 2;
+    while (arg_index < argc) {
+      parse_file(argv[arg_index]);
+      arg_index = arg_index + 1;
+    }
+    size_t signatures_index = 0;
+    while (signatures_index < STRINGS_ID_MAP_LENGTH) {
+      parse_fn_signature_t signature = parse_fn_signatures[signatures_index];
+      if (signature.exists) {
+        log_string(strings_pointers[signatures_index]);
+        log_string("(");
+        size_t args_index = 0;
+        while (args_index < signature.arity) {
+          log_string(strings_pointers[signature.arg_names[args_index]]);
+          log_string(" ");
+          log_string(strings_pointers[signature.arg_types[args_index]]);
+          args_index = args_index + 1;
+          if (args_index == signature.arity) {
+            log_line(") { ... }");
+          } else {
+            log_string(", ");
+          }
+        }
+      }
+      signatures_index = signatures_index + 1;
     }
   } else {
     log_string("Unknown command \"");
