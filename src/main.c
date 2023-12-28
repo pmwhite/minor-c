@@ -364,11 +364,11 @@ void parse_log_current_line_with_location_marker() {
   size_t line_number_length = log_size(parse_line);
   log_string(" | ");
   size_t code_line_error_position = parse_read_buffer_index - parse_start_of_line;
-  size_t end_of_line = parse_read_buffer_index;
-  size_t end_of_line_limit = min_size(parse_start_of_line + MAX_LINE_LENGTH_FOR_ERRORS, parse_read_buffer_length);
+  size_t end_of_line = parse_start_of_line;
+  size_t end_of_line_limit = parse_start_of_line + MAX_LINE_LENGTH_FOR_ERRORS;
   bool_t reached_end_of_line = false;
   while (end_of_line < end_of_line_limit) {
-    if (parse_read_buffer[end_of_line] == '\n') {
+    if (end_of_line >= parse_read_buffer_length || parse_read_buffer[end_of_line] == '\n') {
       reached_end_of_line = true;
       break;
     }
@@ -378,6 +378,9 @@ void parse_log_current_line_with_location_marker() {
   log_lstring(&parse_read_buffer[parse_start_of_line], code_line_length);
   if (!reached_end_of_line) {
     log_string("...");
+  }
+  if (parse_read_buffer_index == parse_read_buffer_length) {
+    log_string("<end-of-file>");
   }
   log_newline();
   size_t error_position_minus_one = line_number_length + 3 + code_line_error_position - 1;
@@ -416,12 +419,12 @@ void advance_char() {
 
 /* Peek the next character and advance past it if non-zero. We do not abort if
    the stream is ended because there is not enough context in this function to
-   give a good error message. */
+   give a good error message. The current position is advanced regardless of
+   whether the file is empty or not, with the expectation that parsing code
+   recognizes the 0 return value and does not call parse_char again. */
 char parse_char() {
   char c = peek_char();
-  if (c) {
-    advance_char();
-  }
+  advance_char();
   return c;
 }
 
@@ -459,8 +462,14 @@ bool_t parse_is_whitespace(char c) {
 
 /* Skips past whitespace, if there is any. */
 void parse_skip_whitespace() {
-  while (parse_is_whitespace(peek_char())) {
+  char c;
+again:
+  c = peek_char();
+  if (!c) {
     advance_char();
+  } else if (parse_is_whitespace(c)) {
+    advance_char();
+    goto again;
   }
 }
 
@@ -639,6 +648,8 @@ void parse_declaration() {
               break;
           }
         }
+      } else {
+        advance_char();
       }
 finished_arg_list:
       parse_skip_whitespace();
