@@ -54,3 +54,38 @@
   1 | fn abc(w x y z) {}
                  ^
   [1]
+
+  $ test <<\.
+  > fn abc() {
+  >   :if test
+  > }
+  > .
+
+  $ test <<\.
+  > fn abc() {
+  >   :if test
+  >   :elif test2
+  >   :else
+  >   :end
+  > }
+  > .
+
+  $ test <<\.
+  > fn abc() {
+  >   :abcdef
+  > }
+  > .
+  bad.minc:2:5: Expected 'if' or 'end' after ':'.
+  2 |   :abcdef
+         ^
+  [1]
+
+  $ test <<\.
+  > fn abc() {
+  >   :elsif abcd
+  > }
+  > .
+  bad.minc:2:8: Expected 'if' or 'end' after ':'.
+  2 |   :elsif abcd
+            ^
+  [1]

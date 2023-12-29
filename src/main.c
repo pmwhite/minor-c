@@ -487,6 +487,13 @@ void parse_error_expected_declaration_start_keyword() {
     syscall_exit(1);
 }
 
+void parse_error_expected_control_flow_keyword() {
+    parse_log_location();
+    log_line("Expected one of 'if', 'elif', 'else', or 'end' after ':'.");
+    parse_log_current_line_with_location_marker();
+    syscall_exit(1);
+}
+
 u8_t parse_identifier_start_chars[256];
 u8_t parse_identifier_rest_chars[256];
 
@@ -567,6 +574,10 @@ typedef struct parse_fn_signature_t {
 } parse_fn_signature_t;
 
 parse_fn_signature_t parse_fn_signatures[STRINGS_ID_MAP_LENGTH];
+
+void parse_expression() {
+  (void) parse_permanent_identifier();
+}
 
 void parse_declaration() {
   char c = parse_char();
@@ -654,14 +665,69 @@ finished_arg_list:
         parse_log_current_line_with_location_marker();
         syscall_exit(1);
       }
-      parse_skip_whitespace();
-      if (!parse_exactly("}")) {
-        parse_log_location();
-        log_line("Expected '}' to finish function body.");
-        parse_log_current_line_with_location_marker();
-        syscall_exit(1);
-      }
       parse_fn_signatures[fn_name] = signature;
+      while (true) {
+        parse_skip_whitespace();
+        switch (peek_char()) {
+          case ':':
+            advance_char();
+            switch (parse_char()) {
+              case 'i':
+                if (!parse_exactly("f")) {
+                  parse_error_expected_control_flow_keyword();
+                }
+                parse_skip_whitespace1();
+                parse_expression();
+                break;
+              case 'e':
+                switch (parse_char()) {
+                  case 'l':
+                    switch (parse_char()) {
+                      case 'i':
+                        if (!parse_exactly("f")) {
+                          parse_error_expected_control_flow_keyword();
+                        }
+                        parse_skip_whitespace1();
+                        parse_expression();
+                        break;
+                      case 's':
+                        if (!parse_exactly("e")) {
+                          parse_error_expected_control_flow_keyword();
+                        }
+                        break;
+                      default:
+                        parse_error_expected_control_flow_keyword();
+                        break;
+                    }
+                    break;
+                  case 'n':
+                    if (!parse_exactly("d")) {
+                      parse_error_expected_control_flow_keyword();
+                    }
+                    break;
+                  default:
+                    parse_error_expected_control_flow_keyword();
+                    break;
+                }
+                break;
+              default:
+                parse_error_expected_control_flow_keyword();
+                break;
+            }
+            break;
+          case '}':
+            advance_char();
+            goto finished_fn_body;
+          default:
+            advance_char();
+            parse_log_location();
+            log_line("Expected '}' to finish function body.");
+            parse_log_current_line_with_location_marker();
+            syscall_exit(1);
+            break;
+        }
+      }
+finished_fn_body:
       break;
     default:
       parse_error_expected_declaration_start_keyword();
