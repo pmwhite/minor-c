@@ -466,7 +466,6 @@ void parse_skip_whitespace() {
 again:
   c = peek_char();
   if (!c) {
-    advance_char();
   } else if (parse_is_whitespace(c)) {
     advance_char();
     goto again;
