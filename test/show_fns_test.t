@@ -64,8 +64,7 @@
   $ test <<\.
   > fn abc() {
   >   :if test
-  >   :elif test2
-  >   :else
+  >   :else :if abc
   >   :end
   > }
   > .
@@ -75,7 +74,7 @@
   >   :abcdef
   > }
   > .
-  bad.minc:2:5: Expected 'if' or 'end' after ':'.
+  bad.minc:2:5: Expected one of 'if', 'elif', 'else', or 'end' after ':'.
   2 |   :abcdef
          ^
   [1]
@@ -85,7 +84,7 @@
   >   :elsif abcd
   > }
   > .
-  bad.minc:2:8: Expected 'if' or 'end' after ':'.
+  bad.minc:2:8: Expected one of 'if', 'elif', 'else', or 'end' after ':'.
   2 |   :elsif abcd
             ^
   [1]

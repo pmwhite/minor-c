@@ -481,17 +481,17 @@ void parse_skip_whitespace1() {
 }
 
 void parse_error_expected_declaration_start_keyword() {
-    parse_log_location();
-    log_line("Expected either 'struct' or 'fn' to begin declaration.");
-    parse_log_current_line_with_location_marker();
-    syscall_exit(1);
+  parse_log_location();
+  log_line("Expected either 'struct' or 'fn' to begin declaration.");
+  parse_log_current_line_with_location_marker();
+  syscall_exit(1);
 }
 
 void parse_error_expected_control_flow_keyword() {
-    parse_log_location();
-    log_line("Expected one of 'if', 'elif', 'else', or 'end' after ':'.");
-    parse_log_current_line_with_location_marker();
-    syscall_exit(1);
+  parse_log_location();
+  log_line("Expected one of 'if', 'else', or 'end' after ':'.");
+  parse_log_current_line_with_location_marker();
+  syscall_exit(1);
 }
 
 u8_t parse_identifier_start_chars[256];
@@ -676,28 +676,14 @@ finished_arg_list:
                 if (!parse_exactly("f")) {
                   parse_error_expected_control_flow_keyword();
                 }
-                parse_skip_whitespace1();
+                parse_skip_whitespace();
                 parse_expression();
                 break;
               case 'e':
                 switch (parse_char()) {
                   case 'l':
-                    switch (parse_char()) {
-                      case 'i':
-                        if (!parse_exactly("f")) {
-                          parse_error_expected_control_flow_keyword();
-                        }
-                        parse_skip_whitespace1();
-                        parse_expression();
-                        break;
-                      case 's':
-                        if (!parse_exactly("e")) {
-                          parse_error_expected_control_flow_keyword();
-                        }
-                        break;
-                      default:
-                        parse_error_expected_control_flow_keyword();
-                        break;
+                    if (!parse_exactly("se")) {
+                      parse_error_expected_control_flow_keyword();
                     }
                     break;
                   case 'n':
