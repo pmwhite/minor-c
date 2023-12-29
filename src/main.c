@@ -379,7 +379,7 @@ void parse_log_current_line_with_location_marker() {
   if (!reached_end_of_line) {
     log_string("...");
   }
-  if (parse_read_buffer_index == parse_read_buffer_length) {
+  if (parse_read_buffer_index >= parse_read_buffer_length) {
     log_string("<end-of-file>");
   }
   log_newline();
@@ -419,9 +419,10 @@ void advance_char() {
 
 /* Peek the next character and advance past it if non-zero. We do not abort if
    the stream is ended because there is not enough context in this function to
-   give a good error message. The current position is advanced regardless of
-   whether the file is empty or not, with the expectation that parsing code
-   recognizes the 0 return value and does not call parse_char again. */
+   give a good error message. The current position is advanced even if the
+   stream has ended because the convention is that the parsing index should sit
+   immediately after the index that gave it trouble; in other words, we parse
+   first, ask questions later. */
 char parse_char() {
   char c = peek_char();
   advance_char();
@@ -462,13 +463,8 @@ bool_t parse_is_whitespace(char c) {
 
 /* Skips past whitespace, if there is any. */
 void parse_skip_whitespace() {
-  char c;
-again:
-  c = peek_char();
-  if (!c) {
-  } else if (parse_is_whitespace(c)) {
+  while (parse_is_whitespace(peek_char())) {
     advance_char();
-    goto again;
   }
 }
 

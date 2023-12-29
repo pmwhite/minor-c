@@ -19,6 +19,6 @@
   > fn abc() {
   > .
   bad.minc:2:2: Expected '}' to finish function body.
-  2 | 
+  2 | <end-of-file>
       ^
   [1]
