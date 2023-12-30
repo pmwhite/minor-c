@@ -65,16 +65,25 @@
   > fn abc() {
   >   :if test
   >   :else :if abc
+  >     :switch x
+  >     :case 1
+  >       :while true
+  >       :end
+  >     :end
   >   :end
   > }
   > .
+  bad.minc:5:12: Expected identifier.
+  5 |     :case 1
+                ^
+  [1]
 
   $ test <<\.
   > fn abc() {
   >   :abcdef
   > }
   > .
-  bad.minc:2:5: Expected one of 'if', 'elif', 'else', or 'end' after ':'.
+  bad.minc:2:5: Expected one of 'if', 'else', 'switch', 'case', 'while', or 'end' after ':'.
   2 |   :abcdef
          ^
   [1]
@@ -84,7 +93,7 @@
   >   :elsif abcd
   > }
   > .
-  bad.minc:2:8: Expected one of 'if', 'elif', 'else', or 'end' after ':'.
+  bad.minc:2:8: Expected one of 'if', 'else', 'switch', 'case', 'while', or 'end' after ':'.
   2 |   :elsif abcd
             ^
   [1]

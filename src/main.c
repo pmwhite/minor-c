@@ -489,7 +489,7 @@ void parse_error_expected_declaration_start_keyword() {
 
 void parse_error_expected_control_flow_keyword() {
   parse_log_location();
-  log_line("Expected one of 'if', 'else', or 'end' after ':'.");
+  log_line("Expected one of 'if', 'else', 'switch', 'case', 'while', or 'end' after ':'.");
   parse_log_current_line_with_location_marker();
   syscall_exit(1);
 }
@@ -695,6 +695,27 @@ finished_arg_list:
                     parse_error_expected_control_flow_keyword();
                     break;
                 }
+                break;
+              case 's':
+                if (!parse_exactly("witch")) {
+                  parse_error_expected_control_flow_keyword();
+                }
+                parse_skip_whitespace();
+                parse_expression();
+                break;
+              case 'c':
+                if (!parse_exactly("ase")) {
+                  parse_error_expected_control_flow_keyword();
+                }
+                parse_skip_whitespace();
+                parse_expression();
+                break;
+              case 'w':
+                if (!parse_exactly("hile")) {
+                  parse_error_expected_control_flow_keyword();
+                }
+                parse_skip_whitespace();
+                parse_expression();
                 break;
               default:
                 parse_error_expected_control_flow_keyword();
