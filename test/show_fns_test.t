@@ -8,12 +8,12 @@
   > fn y() { }
   > .
 
-  $ $MAIN show-fns fns1.minc fns2.minc
+  $ $MAIN translate fns1.minc fns2.minc
   g(x f32, y f64) { ... }
   f(a i32, b i32) { ... }
   y(x(a i32, b i32) { ... }
 
-  $ test() { cat > bad.minc; $MAIN show-structs bad.minc; }
+  $ test() { cat > bad.minc; $MAIN translate bad.minc; }
 
   $ test <<\.
   > fn abc() {

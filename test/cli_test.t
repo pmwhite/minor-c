@@ -3,8 +3,7 @@ Running the program with no argument yields some help text.
   $ $MAIN
   Usage: <exe> command file...
   Commands:
-    show-structs     List all the struct definitions in the provided files.
-    show-fns         List all the function definitions in the provided files.
+    translate   Read the provided Minor C source files and send equivalent C code to stdout.
 
 An error message is displayed when the specified command is unrecognized.
 

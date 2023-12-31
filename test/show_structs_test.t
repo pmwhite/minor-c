@@ -9,15 +9,15 @@ the compiler's internal database.
   >   y i32;
   > .
 
-The "show-structs" command lists all the structs that have been defined in the
+The "translate" command lists all the structs that have been defined in the
 provided set of files.
 
-  $ $MAIN show-structs structs1.minc
+  $ $MAIN translate structs1.minc
   point
     x i32,
     y i32;
 
-Passing multiple files to show-structs causes it to print the structs defined
+Passing multiple files to translate causes it to print the structs defined
 in all the files.
 
   $ cat > structs2.minc <<\.
@@ -28,7 +28,7 @@ in all the files.
   >   a u8;
   > .
 
-  $ $MAIN show-structs structs1.minc structs2.minc
+  $ $MAIN translate structs1.minc structs2.minc
   point
     x i32,
     y i32;
@@ -41,7 +41,7 @@ in all the files.
 
 When bad syntax is used, the compiler responds with informative error messages.
 
-  $ test() { cat > bad.minc; $MAIN show-structs bad.minc; }
+  $ test() { cat > bad.minc; $MAIN translate bad.minc; }
 
   $ test <<\.
   > struct hello world;

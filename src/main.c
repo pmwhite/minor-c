@@ -799,13 +799,12 @@ i32_t main(i32_t argc, char* argv[]) {
     log_line("Usage: <exe> command file...");
     log_line("Commands:");
     log_indent();
-    log_line("show-structs     List all the struct definitions in the provided files.");
-    log_line("show-fns         List all the function definitions in the provided files.");
+    log_line("translate   Read the provided Minor C source files and send equivalent C code to stdout.");
     log_dedent();
     return 0;
   }
   char* command = argv[1];
-  if (string_equal("show-structs", command)) {
+  if (string_equal("translate", command)) {
     if (argc < 3) {
       log_line("No source files provided.");
       syscall_exit(1);
@@ -844,17 +843,6 @@ i32_t main(i32_t argc, char* argv[]) {
         log_dedent();
       }
       infos_index = infos_index + 1;
-    }
-  } else if (string_equal("show-fns", command)) {
-    if (argc < 3) {
-      log_line("No source files provided.");
-      syscall_exit(1);
-    }
-    parse_init_identifier_chars();
-    i32_t arg_index = 2;
-    while (arg_index < argc) {
-      parse_file(argv[arg_index]);
-      arg_index = arg_index + 1;
     }
     size_t signatures_index = 0;
     while (signatures_index < STRINGS_ID_MAP_LENGTH) {

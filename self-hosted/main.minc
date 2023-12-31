@@ -3,7 +3,7 @@ fn main(argc i32, argv char**) {
     log_line("Usage: <exe> command file...")
     log_line("Commands:")
     log_indent()
-    log_line("show-structs     List all the struct definitions in the provided files.")
+    log_line("validate-syntax   Parse each of the provided files and report the first syntax errors encountered.")
     log_line("show-fns         List all the function definitions in the provided files.")
     log_dedent()
     :return 0i32
