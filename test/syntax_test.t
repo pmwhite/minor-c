@@ -6,13 +6,21 @@ STRUCTS
   > struct point
   >   x i32,
   >   y i32;
-  >
   > struct color
   >   r u8,
   >   g u8,
   >   b u8,
   >   a u8;
   > .
+  point
+    x i32,
+    y i32;
+  
+  color
+    r u8,
+    g u8,
+    b u8,
+    a u8;
 
   $ test <<\.
   > struct hello world;

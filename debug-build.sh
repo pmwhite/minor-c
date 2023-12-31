@@ -10,3 +10,5 @@ gcc -Wall -Wextra -Werror \
   -std=c99 -pedantic \
   -g \
   src/main.S src/main.c -o src/main
+
+test/run_tests.sh
