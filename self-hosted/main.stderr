@@ -1,0 +1,3 @@
+self-hosted/main.minc:1:29: Expected ',' or ')'.
+1 | fn main(argc i32, argv char**) {
+                               ^

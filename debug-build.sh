@@ -12,3 +12,5 @@ gcc -Wall -Wextra -Werror \
   src/main.S src/main.c -o src/main
 
 test/run_tests.sh
+
+src/main translate self-hosted/main.minc > self-hosted/main.c 2> self-hosted/main.stderr
