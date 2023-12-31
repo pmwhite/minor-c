@@ -1,19 +1,64 @@
-  $ cat > fns1.minc <<\.
-  > fn f(a i32, b i32) {}
-  > fn g(x f32, y f64) { }
-  > .
-
-  $ cat > fns2.minc <<\.
-  > fn x(a i32, b i32) {}
-  > fn y() { }
-  > .
-
-  $ $MAIN translate fns1.minc fns2.minc
-  g(x f32, y f64) { ... }
-  f(a i32, b i32) { ... }
-  y(x(a i32, b i32) { ... }
-
   $ test() { cat > bad.minc; $MAIN translate bad.minc; }
+
+STRUCTS
+
+  $ test <<\.
+  > struct point
+  >   x i32,
+  >   y i32;
+  >
+  > struct color
+  >   r u8,
+  >   g u8,
+  >   b u8,
+  >   a u8;
+  > .
+
+  $ test <<\.
+  > struct hello world;
+  > .
+  bad.minc:1:20: Expected identifier for type.
+  1 | struct hello world;
+                        ^
+  [1]
+
+  $ test <<\.
+  > struct hello;
+  > .
+  bad.minc:1:14: Expected identifier.
+  1 | struct hello;
+                  ^
+  [1]
+
+  $ test <<\.
+  > struct hello
+  >   x i32
+  >   y i32;
+  > .
+  bad.minc:3:4: Expected ',' or ';'.
+  3 |   y i32;
+        ^
+  [1]
+
+  $ test <<\.
+  > struct hello
+  >   x i32,,
+  >   y i32;
+  > .
+  bad.minc:2:10: Expected identifier.
+  2 |   x i32,,
+              ^
+  [1]
+
+  $ test <<\.
+  > struct hello;
+  > .
+  bad.minc:1:14: Expected identifier.
+  1 | struct hello;
+                  ^
+  [1]
+
+FUNCTIONS
 
   $ test <<\.
   > fn abc() {
