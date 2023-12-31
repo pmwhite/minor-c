@@ -535,13 +535,20 @@ strings_id_t parse_permanent_identifier() {
 char parse_type_buffer[PARSE_TYPE_BUFFER_LENGTH];
 size_t parse_type_buffer_index = 0;
 
+void parse_type_buffer_append_char(char c) {
+  if (parse_type_buffer_index == PARSE_TYPE_BUFFER_LENGTH) {
+    log_line("Failed to parse type because it exceeded the maximum length for a type.");
+  }
+  parse_type_buffer[parse_type_buffer_index] = c;
+  parse_type_buffer_index = parse_type_buffer_index + 1;
+}
+
 strings_id_t parse_type() {
-  size_t start_index = parse_read_buffer_index;
   char c = peek_char();
+  parse_type_buffer_index = 0;
   if (parse_identifier_start_chars[(size_t) c]) {
     do {
-      parse_type_buffer[parse_type_buffer_index] = c;
-      parse_type_buffer_index = parse_type_buffer_index + 1;
+      parse_type_buffer_append_char(c);
       advance_char();
       c = peek_char();
     } while (parse_identifier_rest_chars[(size_t) c]);
@@ -553,8 +560,17 @@ strings_id_t parse_type() {
     syscall_exit(1);
     return 0;
   }
-  size_t length = parse_read_buffer_index - start_index;
-  return strings_id(&parse_read_buffer[start_index], length);
+  while (true) {
+    parse_skip_whitespace();
+    char c = peek_char();
+    if (c == '*') {
+      parse_type_buffer_append_char(c);
+      advance_char();
+    } else {
+      break;
+    }
+  }
+  return strings_id(parse_type_buffer, parse_type_buffer_index);
 }
 
 typedef struct parse_local_variable_t {

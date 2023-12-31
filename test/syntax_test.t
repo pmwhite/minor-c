@@ -150,3 +150,19 @@ FUNCTIONS
   2 |   :elsif abcd
             ^
   [1]
+
+TYPES
+
+Named types.
+
+  $ test <<\.
+  > fn abc(a b) { }
+  > .
+  abc(a b) { ... }
+
+Pointer types.
+
+  $ test <<\.
+  > fn abc(a b*) { }
+  > .
+  abc(a b*) { ... }
