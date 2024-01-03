@@ -13,4 +13,5 @@ gcc -Wall -Wextra -Werror \
 
 test/run_tests.sh
 
-src/main translate self-hosted/main.minc > self-hosted/main.c 2> self-hosted/main.stderr
+src/main translate self-hosted/main.minc > self-hosted/main.c 2> self-hosted/main.stderr || true
+src/main sizes 2> sizes

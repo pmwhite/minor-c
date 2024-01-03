@@ -4,6 +4,7 @@ Running the program with no argument yields some help text.
   Usage: <exe> command file...
   Commands:
     translate   Read the provided Minor C source files and send equivalent C code to stdout.
+    sizes       Print the sizes compiler-internal data types.
 
 An error message is displayed when the specified command is unrecognized.
 

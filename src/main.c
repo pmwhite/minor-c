@@ -5,6 +5,7 @@
  * we put all the constants in one place.
  * -------------------------------------------------------------------------------- */
 
+#define ONE_MB 10485760
 #define TEN_MB 10485760 
 #define HUNDRED_MB 104857600
 #define MAX_U16 65536
@@ -17,6 +18,8 @@
 #define STRINGS_ID_MAP_LENGTH MAX_U16
 #define MAX_FN_ARITY 14
 #define MAX_LOCAL_VARIABLES 1024
+#define MAX_EXPRESSIONS TEN_MB
+#define MAX_EXPRESSION_DEPTH 1024
 
 /* -------------------------------------------------------------------------------- */
 
@@ -573,14 +576,6 @@ strings_id_t parse_type() {
   return strings_id(parse_type_buffer, parse_type_buffer_index);
 }
 
-typedef struct parse_local_variable_t {
-  strings_id_t name;
-  strings_id_t type;
-} parse_local_variable_t;
-
-parse_local_variable_t parse_local_variables[MAX_LOCAL_VARIABLES];
-size_t parse_local_variables_index = 0;
-
 typedef struct parse_fn_signature_t {
   bool_t exists;
   u16_t arity;
@@ -591,8 +586,113 @@ typedef struct parse_fn_signature_t {
 
 parse_fn_signature_t parse_fn_signatures[STRINGS_ID_MAP_LENGTH];
 
+typedef u8_t expression_kind_t;
+#define expression_kind_operation 0
+#define expression_kind_integer 1
+#define expression_kind_identifier 2
+
+typedef struct parse_local_variable_t {
+  strings_id_t name;
+  strings_id_t type;
+} parse_local_variable_t;
+
+parse_local_variable_t parse_local_variables[MAX_LOCAL_VARIABLES];
+size_t parse_local_variables_index = 0;
+
+typedef struct expression_t {
+  expression_kind_t kind;
+  /* Arity is the number of operands passed to the operation. */
+  u8_t arity;
+  /* Data is the id for one of (a) the name of the operation, (b) the
+     identifier, or (c) the digits of the integer, depending on the kind. */
+  strings_id_t data;
+} expression_t;
+
+expression_t parse_expressions[MAX_EXPRESSIONS];
+size_t parse_expression_index = 0;
+
+typedef struct expression_stack_item_t {
+  size_t index;
+  u8_t operands_left;
+} expression_stack_item_t;
+expression_stack_item_t expression_stack[MAX_EXPRESSION_DEPTH];
+
 void parse_expression() {
-  (void) parse_permanent_identifier();
+  char c = peek_char();
+  i64_t expression_stack_index = -1;
+  bool_t expect_comma = false;
+  do {
+    if (expect_comma && !parse_exactly(",")) {
+      parse_log_location();
+      log_line("Expected ',' to continue argument list.");
+      parse_log_current_line_with_location_marker();
+      syscall_exit(1);
+    }
+    if (parse_identifier_start_chars[(size_t) c]) {
+      strings_id_t name = parse_permanent_identifier();
+      parse_skip_whitespace();
+      parse_fn_signature_t fn;
+      size_t local_variable_index;
+      bool_t found_variable;
+      parse_local_variable_t variable;
+      switch(peek_char()) {
+        case '(':
+          fn = parse_fn_signatures[name];
+          if (fn.exists) {
+            parse_expressions[parse_expression_index] = (expression_t) {
+              .kind = expression_kind_operation,
+              .arity = fn.arity,
+              .data = name
+            };
+            expression_stack_item_t item = {
+              .index = parse_expression_index,
+              .operands_left = fn.arity
+            };
+            expression_stack_index = expression_stack_index + 1;
+            expression_stack[expression_stack_index] = item;
+            parse_expression_index = parse_expression_index + 1;
+            expect_comma = false;
+          } else {
+            parse_log_location();
+            log_string("Unknown function '");
+            log_string(strings_pointers[name]);
+            log_line("'.");
+            parse_log_current_line_with_location_marker();
+            syscall_exit(1);
+          }
+          break;
+        default:
+          local_variable_index = 0;
+          found_variable = false;
+          while (local_variable_index < parse_local_variables_index) {
+            variable = parse_local_variables[local_variable_index];
+            if (variable.name == name) {
+              found_variable = true;
+              break;
+            }
+            local_variable_index = local_variable_index + 1;
+          }
+          if (found_variable) {
+            parse_expressions[parse_expression_index] = (expression_t) {
+              .kind = expression_kind_identifier,
+              .arity = 0,
+              .data = name
+            };
+            parse_expression_index = parse_expression_index + 1;
+            expect_comma = true;
+          } else {
+            parse_log_location();
+            log_string("Unknown variable '");
+            log_string(strings_pointers[name]);
+            log_line("'.");
+            parse_log_current_line_with_location_marker();
+            syscall_exit(1);
+          }
+          break;
+      }
+    }
+    parse_skip_whitespace();
+  } while (expression_stack_index >= 0 && expression_stack[expression_stack_index].operands_left > 0);
 }
 
 void parse_declaration() {
@@ -816,6 +916,7 @@ i32_t main(i32_t argc, char* argv[]) {
     log_line("Commands:");
     log_indent();
     log_line("translate   Read the provided Minor C source files and send equivalent C code to stdout.");
+    log_line("sizes       Print the sizes compiler-internal data types.");
     log_dedent();
     return 0;
   }
@@ -881,6 +982,22 @@ i32_t main(i32_t argc, char* argv[]) {
       }
       signatures_index = signatures_index + 1;
     }
+  } else if (string_equal("sizes", command)) {
+    log_string("struct_field_t: ");
+    log_size(sizeof(struct_field_t));
+    log_newline();
+    log_string("struct_info_t: ");
+    log_size(sizeof(struct_info_t));
+    log_newline();
+    log_string("parse_fn_signature_t: ");
+    log_size(sizeof(parse_fn_signature_t));
+    log_newline();
+    log_string("parse_local_variable_t: ");
+    log_size(sizeof(parse_local_variable_t));
+    log_newline();
+    log_string("expression_t: ");
+    log_size(sizeof(expression_t));
+    log_newline();
   } else {
     log_string("Unknown command \"");
     log_string(command);
