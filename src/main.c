@@ -19,7 +19,7 @@
 #define MAX_FN_ARITY 14
 #define MAX_LOCAL_VARIABLES 1024
 #define MAX_EXPRESSIONS TEN_MB
-#define MAX_EXPRESSION_DEPTH 1024
+#define MAX_EXPRESSION_DEPTH 255
 
 /* -------------------------------------------------------------------------------- */
 
@@ -641,15 +641,13 @@ typedef struct expression_t {
 expression_t parse_expressions[MAX_EXPRESSIONS];
 size_t parse_expression_index = 0;
 
-typedef struct expression_stack_item_t {
-  size_t index;
-  u8_t operands_left;
-} expression_stack_item_t;
-expression_stack_item_t expression_stack[MAX_EXPRESSION_DEPTH];
-i64_t expression_stack_index = -1;
-bool_t expect_comma = false;
+void parse_expression(u8_t depth);
 
-void parse_call_arguments(strings_id_t name) {
+void parse_call_arguments(u8_t depth, location_t name_location, strings_id_t name) {
+  if (depth >= MAX_EXPRESSION_DEPTH) {
+    log_line("Reached max expression depth.");
+    syscall_exit(1);
+  }
   parse_fn_signature_t fn = parse_fn_signatures[name];
   if (fn.exists) {
     parse_expressions[parse_expression_index] = (expression_t) {
@@ -657,117 +655,110 @@ void parse_call_arguments(strings_id_t name) {
       .arity = fn.arity,
       .data = name
     };
-    expression_stack_item_t item = {
-      .index = parse_expression_index,
-      .operands_left = fn.arity
-    };
-    expression_stack_index = expression_stack_index + 1;
-    expression_stack[expression_stack_index] = item;
     parse_expression_index = parse_expression_index + 1;
-    expect_comma = false;
+    size_t i = 0;
+    while (i < fn.arity) {
+      parse_expression(depth + 1);
+      parse_skip_whitespace();
+      i = i + 1;
+    }
+    if (!parse_exactly(")")) {
+      parse_log_current_location();
+      log_string("Expected ')' because the function '");
+      log_string(strings_pointers[name]);
+      log_string("' has arity ");
+      log_size((size_t) fn.arity);
+      log_line(".");
+      parse_log_current_location_line_with_column_marker();
+      syscall_exit(1);
+    }
   } else {
-    parse_log_current_location();
+    advance_location(&name_location);
+    parse_log_location(name_location);
     log_string("Unknown function '");
     log_string(strings_pointers[name]);
     log_line("'.");
-    parse_log_current_location_line_with_column_marker();
+    parse_log_location_line_with_column_marker(name_location);
     syscall_exit(1);
   }
 }
 
-void parse_expression_helper() {
-  do {
+void parse_expression(u8_t depth) {
+  if (depth == MAX_EXPRESSION_DEPTH) {
+    log_line("Reached max expression depth.");
+    syscall_exit(1);
+  }
+  char c = peek_char();
+  if (parse_identifier_start_chars[(size_t) c]) {
+    location_t name_location = current_location;
+    strings_id_t name = parse_permanent_identifier();
     parse_skip_whitespace();
-    if (expect_comma && !parse_exactly(",")) {
-      parse_log_current_location();
-      log_line("Expected ',' to continue argument list.");
-      parse_log_current_location_line_with_column_marker();
-      syscall_exit(1);
+    size_t local_variable_index;
+    bool_t found_variable;
+    parse_local_variable_t variable;
+    switch(peek_char()) {
+      case '(':
+        advance_char();
+        parse_call_arguments(depth + 1, name_location, name);
+        break;
+      default:
+        local_variable_index = 0;
+        found_variable = false;
+        while (local_variable_index < parse_local_variables_index) {
+          variable = parse_local_variables[local_variable_index];
+          if (variable.name == name) {
+            found_variable = true;
+            break;
+          }
+          local_variable_index = local_variable_index + 1;
+        }
+        if (found_variable) {
+          parse_expressions[parse_expression_index] = (expression_t) {
+            .kind = expression_kind_identifier,
+            .arity = 0,
+            .data = name
+          };
+          parse_expression_index = parse_expression_index + 1;
+        } else {
+          /* Advance the identifier location because we saved it at the
+              character _before_ the identifier began. */
+          advance_location(&name_location);
+          parse_log_location(name_location);
+          log_string("Unknown variable '");
+          log_string(strings_pointers[name]);
+          log_line("'.");
+          parse_log_location_line_with_column_marker(name_location);
+          syscall_exit(1);
+        }
+        break;
     }
-    char c = peek_char();
-    if (parse_identifier_start_chars[(size_t) c]) {
-      location_t identifier_location = current_location;
-      strings_id_t name = parse_permanent_identifier();
-      parse_skip_whitespace();
-      size_t local_variable_index;
-      bool_t found_variable;
-      parse_local_variable_t variable;
-      switch(peek_char()) {
-        case '(':
-          advance_char();
-          parse_call_arguments(name);
-          break;
-        default:
-          local_variable_index = 0;
-          found_variable = false;
-          while (local_variable_index < parse_local_variables_index) {
-            variable = parse_local_variables[local_variable_index];
-            if (variable.name == name) {
-              found_variable = true;
-              break;
-            }
-            local_variable_index = local_variable_index + 1;
-          }
-          if (found_variable) {
-            parse_expressions[parse_expression_index] = (expression_t) {
-              .kind = expression_kind_identifier,
-              .arity = 0,
-              .data = name
-            };
-            parse_expression_index = parse_expression_index + 1;
-            expect_comma = true;
-          } else {
-            /* Advance the identifier location because we saved it at the
-               character _before_ the identifier began. */
-            advance_location(&identifier_location);
-            parse_log_location(identifier_location);
-            log_string("Unknown variable '");
-            log_string(strings_pointers[name]);
-            log_line("'.");
-            parse_log_location_line_with_column_marker(identifier_location);
-            syscall_exit(1);
-          }
-          break;
-      }
-    } else if (parse_digit_chars[(size_t) c]) {
-      do {
-        advance_char();
-      } while (parse_digit_chars[(size_t) peek_char()]);
-      char signedness = parse_char();
-      if (signedness != 'i' && signedness != 'u') {
-        parse_log_current_location();
-        log_line("Expected 'u' or 'i' after digits to specify signedness.");
-        parse_log_current_location_line_with_column_marker();
-        syscall_exit(1);
-      }
-      if (!parse_digit_chars[(size_t) parse_char()]) {
-        parse_log_current_location();
-        log_line("Expected digits after signedness to specify size.");
-        parse_log_current_location_line_with_column_marker();
-        syscall_exit(1);
-      }
-      while (parse_digit_chars[(size_t) peek_char()]) {
-        advance_char();
-      }
-    } else {
+  } else if (parse_digit_chars[(size_t) c]) {
+    do {
       advance_char();
+    } while (parse_digit_chars[(size_t) peek_char()]);
+    char signedness = parse_char();
+    if (signedness != 'i' && signedness != 'u') {
       parse_log_current_location();
-      log_line("Expected identifier or number literal.");
+      log_line("Expected 'u' or 'i' after digits to specify signedness.");
       parse_log_current_location_line_with_column_marker();
       syscall_exit(1);
     }
-  } while (expression_stack_index >= 0 && expression_stack[expression_stack_index].operands_left > 0);
-}
-
-void parse_expression() {
-  expect_comma = false;
-  expression_stack_index = -1;
-  parse_expression_helper();
-}
-
-void parse_call_expression(strings_id_t name) {
-  parse_call_arguments(name);
-  parse_expression();
+    if (!parse_digit_chars[(size_t) parse_char()]) {
+      parse_log_current_location();
+      log_line("Expected digits after signedness to specify size.");
+      parse_log_current_location_line_with_column_marker();
+      syscall_exit(1);
+    }
+    while (parse_digit_chars[(size_t) peek_char()]) {
+      advance_char();
+    }
+  } else {
+    advance_char();
+    parse_log_current_location();
+    log_line("Expected identifier or number literal.");
+    parse_log_current_location_line_with_column_marker();
+    syscall_exit(1);
+  }
 }
 
 void parse_declaration() {
@@ -868,7 +859,7 @@ finished_arg_list:
                 parse_error_expected_control_flow_keyword();
               }
               parse_skip_whitespace();
-              parse_expression();
+              parse_expression(0);
               break;
             case 'e':
               switch (parse_char()) {
@@ -892,21 +883,21 @@ finished_arg_list:
                 parse_error_expected_control_flow_keyword();
               }
               parse_skip_whitespace();
-              parse_expression();
+              parse_expression(0);
               break;
             case 'c':
               if (!parse_exactly("ase")) {
                 parse_error_expected_control_flow_keyword();
               }
               parse_skip_whitespace();
-              parse_expression();
+              parse_expression(0);
               break;
             case 'w':
               if (!parse_exactly("hile")) {
                 parse_error_expected_control_flow_keyword();
               }
               parse_skip_whitespace();
-              parse_expression();
+              parse_expression(0);
               break;
             default:
               parse_error_expected_control_flow_keyword();
@@ -916,13 +907,14 @@ finished_arg_list:
           advance_char();
           goto finished_fn_body;
         } else if (parse_identifier_start_chars[(size_t) c]) {
+          location_t name_location = current_location;
           strings_id_t name = parse_permanent_identifier();
           parse_skip_whitespace();
           char c = peek_char();
           if (c == '=') {
             advance_char();
             parse_skip_whitespace();
-            parse_expression();
+            parse_expression(0);
             parse_local_variables[parse_local_variables_index] = (parse_local_variable_t) {
               .name = name,
               .type = 0
@@ -930,7 +922,7 @@ finished_arg_list:
             parse_local_variables_index = parse_local_variables_index + 1;
           } else if (c == '(') {
             advance_char();
-            parse_call_expression(name);
+            parse_call_arguments(0, name_location, name);
           } else {
             parse_log_current_location();
             log_line("Expected statement or '}'.");

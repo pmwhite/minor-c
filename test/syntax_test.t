@@ -167,9 +167,15 @@ FUNCTIONS
   >   f()
   > }
   > .
-  bad.minc:5:6: Expected identifier or number literal.
-  5 |   f()
-          ^
+
+  $ test <<\.
+  > fn g() {
+  >   f()
+  > }
+  > .
+  bad.minc:2:4: Unknown function 'f'.
+  2 |   f()
+        ^
   [1]
 
 TYPES
