@@ -71,7 +71,7 @@ FUNCTIONS
   $ test <<\.
   > fn abc() {
   > .
-  bad.minc:2:2: Expected '}' to finish function body.
+  bad.minc:2:2: Expected statement or '}'.
   2 | <end-of-file>
       ^
   [1]
@@ -110,26 +110,24 @@ FUNCTIONS
 
   $ test <<\.
   > fn abc() {
+  >   test = 5u8
   >   :if test
   > }
   > .
 
   $ test <<\.
   > fn abc() {
-  >   :if test
-  >   :else :if abc
+  >   x = 5u8
+  >   :if 123u8
+  >   :else :if x
   >     :switch x
-  >     :case 1
-  >       :while true
+  >     :case 1u8
+  >       :while 1u8
   >       :end
   >     :end
   >   :end
   > }
   > .
-  bad.minc:5:12: Expected identifier.
-  5 |     :case 1
-                ^
-  [1]
 
   $ test <<\.
   > fn abc() {

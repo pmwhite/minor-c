@@ -499,8 +499,9 @@ void parse_error_expected_control_flow_keyword() {
 
 u8_t parse_identifier_start_chars[256];
 u8_t parse_identifier_rest_chars[256];
+u8_t parse_digit_chars[256];
 
-void parse_init_identifier_chars() {
+void parse_init_char_tables() {
   size_t c = 'a' - 1;
   while (c <= 'z') {
     parse_identifier_start_chars[c] = 1;
@@ -510,6 +511,7 @@ void parse_init_identifier_chars() {
   c = '0';
   while (c <= '9') {
     parse_identifier_rest_chars[c] = 1;
+    parse_digit_chars[c] = 1;
     c = c + 1;
   }
   parse_identifier_rest_chars['_'] = 1;
@@ -616,50 +618,55 @@ typedef struct expression_stack_item_t {
   u8_t operands_left;
 } expression_stack_item_t;
 expression_stack_item_t expression_stack[MAX_EXPRESSION_DEPTH];
+i64_t expression_stack_index = -1;
+bool_t expect_comma = false;
 
-void parse_expression() {
-  char c = peek_char();
-  i64_t expression_stack_index = -1;
-  bool_t expect_comma = false;
+void parse_call_arguments(strings_id_t name) {
+  parse_fn_signature_t fn = parse_fn_signatures[name];
+  if (fn.exists) {
+    parse_expressions[parse_expression_index] = (expression_t) {
+      .kind = expression_kind_operation,
+      .arity = fn.arity,
+      .data = name
+    };
+    expression_stack_item_t item = {
+      .index = parse_expression_index,
+      .operands_left = fn.arity
+    };
+    expression_stack_index = expression_stack_index + 1;
+    expression_stack[expression_stack_index] = item;
+    parse_expression_index = parse_expression_index + 1;
+    expect_comma = false;
+  } else {
+    parse_log_location();
+    log_string("Unknown function '");
+    log_string(strings_pointers[name]);
+    log_line("'.");
+    parse_log_current_line_with_location_marker();
+    syscall_exit(1);
+  }
+}
+
+void parse_expression_helper() {
   do {
+    parse_skip_whitespace();
     if (expect_comma && !parse_exactly(",")) {
       parse_log_location();
       log_line("Expected ',' to continue argument list.");
       parse_log_current_line_with_location_marker();
       syscall_exit(1);
     }
+    char c = peek_char();
     if (parse_identifier_start_chars[(size_t) c]) {
       strings_id_t name = parse_permanent_identifier();
       parse_skip_whitespace();
-      parse_fn_signature_t fn;
       size_t local_variable_index;
       bool_t found_variable;
       parse_local_variable_t variable;
       switch(peek_char()) {
         case '(':
-          fn = parse_fn_signatures[name];
-          if (fn.exists) {
-            parse_expressions[parse_expression_index] = (expression_t) {
-              .kind = expression_kind_operation,
-              .arity = fn.arity,
-              .data = name
-            };
-            expression_stack_item_t item = {
-              .index = parse_expression_index,
-              .operands_left = fn.arity
-            };
-            expression_stack_index = expression_stack_index + 1;
-            expression_stack[expression_stack_index] = item;
-            parse_expression_index = parse_expression_index + 1;
-            expect_comma = false;
-          } else {
-            parse_log_location();
-            log_string("Unknown function '");
-            log_string(strings_pointers[name]);
-            log_line("'.");
-            parse_log_current_line_with_location_marker();
-            syscall_exit(1);
-          }
+          advance_char();
+          parse_call_arguments(name);
           break;
         default:
           local_variable_index = 0;
@@ -690,9 +697,45 @@ void parse_expression() {
           }
           break;
       }
+    } else if (parse_digit_chars[(size_t) c]) {
+      do {
+        advance_char();
+      } while (parse_digit_chars[(size_t) peek_char()]);
+      char signedness = parse_char();
+      if (signedness != 'i' && signedness != 'u') {
+        parse_log_location();
+        log_line("Expected 'u' or 'i' after digits to specify signedness.");
+        parse_log_current_line_with_location_marker();
+        syscall_exit(1);
+      }
+      if (!parse_digit_chars[(size_t) parse_char()]) {
+        parse_log_location();
+        log_line("Expected digits after signedness to specify size.");
+        parse_log_current_line_with_location_marker();
+        syscall_exit(1);
+      }
+      while (parse_digit_chars[(size_t) peek_char()]) {
+        advance_char();
+      }
+    } else {
+      advance_char();
+      parse_log_location();
+      log_line("Expected identifier or number literal.");
+      parse_log_current_line_with_location_marker();
+      syscall_exit(1);
     }
-    parse_skip_whitespace();
   } while (expression_stack_index >= 0 && expression_stack[expression_stack_index].operands_left > 0);
+}
+
+void parse_expression() {
+  expect_comma = false;
+  expression_stack_index = -1;
+  parse_expression_helper();
+}
+
+void parse_call_expression(strings_id_t name) {
+  parse_call_arguments(name);
+  parse_expression();
 }
 
 void parse_declaration() {
@@ -784,70 +827,90 @@ finished_arg_list:
       parse_fn_signatures[fn_name] = signature;
       while (true) {
         parse_skip_whitespace();
-        switch (peek_char()) {
-          case ':':
-            advance_char();
-            switch (parse_char()) {
-              case 'i':
-                if (!parse_exactly("f")) {
-                  parse_error_expected_control_flow_keyword();
-                }
-                parse_skip_whitespace();
-                parse_expression();
-                break;
-              case 'e':
-                switch (parse_char()) {
-                  case 'l':
-                    if (!parse_exactly("se")) {
-                      parse_error_expected_control_flow_keyword();
-                    }
-                    break;
-                  case 'n':
-                    if (!parse_exactly("d")) {
-                      parse_error_expected_control_flow_keyword();
-                    }
-                    break;
-                  default:
-                    parse_error_expected_control_flow_keyword();
-                    break;
-                }
-                break;
-              case 's':
-                if (!parse_exactly("witch")) {
-                  parse_error_expected_control_flow_keyword();
-                }
-                parse_skip_whitespace();
-                parse_expression();
-                break;
-              case 'c':
-                if (!parse_exactly("ase")) {
-                  parse_error_expected_control_flow_keyword();
-                }
-                parse_skip_whitespace();
-                parse_expression();
-                break;
-              case 'w':
-                if (!parse_exactly("hile")) {
-                  parse_error_expected_control_flow_keyword();
-                }
-                parse_skip_whitespace();
-                parse_expression();
-                break;
-              default:
+        char c = peek_char();
+        if (c == ':') {
+          advance_char();
+          switch (parse_char()) {
+            case 'i':
+              if (!parse_exactly("f")) {
                 parse_error_expected_control_flow_keyword();
-                break;
-            }
-            break;
-          case '}':
+              }
+              parse_skip_whitespace();
+              parse_expression();
+              break;
+            case 'e':
+              switch (parse_char()) {
+                case 'l':
+                  if (!parse_exactly("se")) {
+                    parse_error_expected_control_flow_keyword();
+                  }
+                  break;
+                case 'n':
+                  if (!parse_exactly("d")) {
+                    parse_error_expected_control_flow_keyword();
+                  }
+                  break;
+                default:
+                  parse_error_expected_control_flow_keyword();
+                  break;
+              }
+              break;
+            case 's':
+              if (!parse_exactly("witch")) {
+                parse_error_expected_control_flow_keyword();
+              }
+              parse_skip_whitespace();
+              parse_expression();
+              break;
+            case 'c':
+              if (!parse_exactly("ase")) {
+                parse_error_expected_control_flow_keyword();
+              }
+              parse_skip_whitespace();
+              parse_expression();
+              break;
+            case 'w':
+              if (!parse_exactly("hile")) {
+                parse_error_expected_control_flow_keyword();
+              }
+              parse_skip_whitespace();
+              parse_expression();
+              break;
+            default:
+              parse_error_expected_control_flow_keyword();
+              break;
+          }
+        } else if (c == '}') {
+          advance_char();
+          goto finished_fn_body;
+        } else if (parse_identifier_start_chars[(size_t) c]) {
+          strings_id_t name = parse_permanent_identifier();
+          parse_skip_whitespace();
+          char c = peek_char();
+          if (c == '=') {
             advance_char();
-            goto finished_fn_body;
-          default:
+            parse_skip_whitespace();
+            parse_expression();
+            parse_local_variables[parse_local_variables_index] = (parse_local_variable_t) {
+              .name = name,
+              .type = 0
+            };
+            parse_local_variables_index = parse_local_variables_index + 1;
+          } else if (c == '(') {
             advance_char();
+            parse_call_expression(name);
+          } else {
             parse_log_location();
-            log_line("Expected '}' to finish function body.");
+            log_line("Expected statement or '}'.");
             parse_log_current_line_with_location_marker();
             syscall_exit(1);
-            break;
+          }
+        } else {
+          advance_char();
+          parse_log_location();
+          log_line("Expected statement or '}'.");
+          parse_log_current_line_with_location_marker();
+          syscall_exit(1);
         }
       }
 finished_fn_body:
@@ -916,7 +979,7 @@ i32_t main(i32_t argc, char* argv[]) {
     log_line("Commands:");
     log_indent();
     log_line("translate   Read the provided Minor C source files and send equivalent C code to stdout.");
-    log_line("sizes       Print the sizes compiler-internal data types.");
+    log_line("sizes       Print the sizes of compiler-internal data types.");
     log_dedent();
     return 0;
   }
@@ -926,7 +989,7 @@ i32_t main(i32_t argc, char* argv[]) {
       log_line("No source files provided.");
       syscall_exit(1);
     }
-    parse_init_identifier_chars();
+    parse_init_char_tables();
     i32_t arg_index = 2;
     while (arg_index < argc) {
       parse_file(argv[arg_index]);
