@@ -346,29 +346,44 @@ void types_add_struct_field(struct_field_t field) {
   }
 }
 
-char parse_read_buffer[PARSE_READ_BUFFER_CAPACITY];
-size_t parse_read_buffer_index = 0;
-size_t parse_read_buffer_length = 0;
-size_t parse_line = 1;
-size_t parse_column = 1;
-size_t parse_start_of_line = 0;
-char const* parse_current_filename;
+typedef struct location_t {
+  size_t line;
+  size_t column;
+  size_t start_of_line;
+  size_t index;
+} location_t;
 
-void parse_log_location() {
-  log_string(parse_current_filename);
+char parse_read_buffer[PARSE_READ_BUFFER_CAPACITY];
+size_t parse_read_buffer_length = 0;
+
+location_t current_location = {
+  .index = 0,
+  .line = 1,
+  .column = 1,
+  .start_of_line = 0
+};
+
+char const* current_filename;
+
+void parse_log_location(location_t location) {
+  log_string(current_filename);
   log_string(":");
-  log_size(parse_line);
+  log_size(location.line);
   log_string(":");
-  log_size(parse_column);
+  log_size(location.column);
   log_string(": ");
 }
 
-void parse_log_current_line_with_location_marker() {
-  size_t line_number_length = log_size(parse_line);
+void parse_log_current_location() {
+  parse_log_location(current_location);
+}
+
+void parse_log_location_line_with_column_marker(location_t location) {
+  size_t line_number_length = log_size(location.line);
   log_string(" | ");
-  size_t code_line_error_position = parse_read_buffer_index - parse_start_of_line;
-  size_t end_of_line = parse_start_of_line;
-  size_t end_of_line_limit = parse_start_of_line + MAX_LINE_LENGTH_FOR_ERRORS;
+  size_t code_line_error_position = location.index - location.start_of_line;
+  size_t end_of_line = location.start_of_line;
+  size_t end_of_line_limit = location.start_of_line + MAX_LINE_LENGTH_FOR_ERRORS;
   bool_t reached_end_of_line = false;
   while (end_of_line < end_of_line_limit) {
     if (end_of_line >= parse_read_buffer_length || parse_read_buffer[end_of_line] == '\n') {
@@ -377,12 +392,12 @@ void parse_log_current_line_with_location_marker() {
     }
     end_of_line = end_of_line + 1;
   }
-  size_t code_line_length = end_of_line - parse_start_of_line;
-  log_lstring(&parse_read_buffer[parse_start_of_line], code_line_length);
+  size_t code_line_length = end_of_line - location.start_of_line;
+  log_lstring(&parse_read_buffer[location.start_of_line], code_line_length);
   if (!reached_end_of_line) {
     log_string("...");
   }
-  if (parse_read_buffer_index >= parse_read_buffer_length) {
+  if (location.index >= parse_read_buffer_length) {
     log_string("<end-of-file>");
   }
   log_newline();
@@ -396,28 +411,41 @@ void parse_log_current_line_with_location_marker() {
   log_newline();
 }
 
+void parse_log_current_location_line_with_column_marker() {
+  parse_log_location_line_with_column_marker(current_location);
+}
+
 /* Returns the next character in the stream. If the current buffer of
    characters has been exhausted, we perform a blocking read on stdin to refill
    it. If the read fail, we abort. A return value of 0 indicates that there are
    no more characters to get. */
 char peek_char() {
-  if (parse_read_buffer_index < parse_read_buffer_length) {
-    return parse_read_buffer[parse_read_buffer_index];
+  if (current_location.index < parse_read_buffer_length) {
+    return parse_read_buffer[current_location.index];
   } else {
     return 0;
   }
+}
+
+void advance_location(location_t* location) {
+  char c = parse_read_buffer[location->index];
+  bool_t is_newline = c == '\n';
+  location->column = location->column * !is_newline + 1;
+  location->line = location->line + is_newline * 1;
+  location->index = location->index + 1;
+  location->start_of_line = location->start_of_line * !is_newline + location->index * is_newline;
 }
 
 /* Skip past the current character. The behavior is undefined if the stream is
    already exhausted, so it is necessary to have first gotten a non-zero return
    value from peek_char. */
 void advance_char() {
-  char c = parse_read_buffer[parse_read_buffer_index];
+  char c = parse_read_buffer[current_location.index];
   bool_t is_newline = c == '\n';
-  parse_column = parse_column * !is_newline + 1;
-  parse_line = parse_line + is_newline * 1;
-  parse_read_buffer_index = parse_read_buffer_index + 1;
-  parse_start_of_line = parse_start_of_line * !is_newline + parse_read_buffer_index * is_newline;
+  current_location.column = current_location.column * !is_newline + 1;
+  current_location.line = current_location.line + is_newline * 1;
+  current_location.index = current_location.index + 1;
+  current_location.start_of_line = current_location.start_of_line * !is_newline + current_location.index * is_newline;
 }
 
 /* Peek the next character and advance past it if non-zero. We do not abort if
@@ -476,24 +504,24 @@ void parse_skip_whitespace1() {
   if (parse_is_whitespace(parse_char())) {
     parse_skip_whitespace();
   } else {
-    parse_log_location();
+    parse_log_current_location();
     log_line("Expected whitespace.");
-    parse_log_current_line_with_location_marker();
+    parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
   }
 }
 
 void parse_error_expected_declaration_start_keyword() {
-  parse_log_location();
+  parse_log_current_location();
   log_line("Expected either 'struct' or 'fn' to begin declaration.");
-  parse_log_current_line_with_location_marker();
+  parse_log_current_location_line_with_column_marker();
   syscall_exit(1);
 }
 
 void parse_error_expected_control_flow_keyword() {
-  parse_log_location();
+  parse_log_current_location();
   log_line("Expected one of 'if', 'else', 'switch', 'case', 'while', or 'end' after ':'.");
-  parse_log_current_line_with_location_marker();
+  parse_log_current_location_line_with_column_marker();
   syscall_exit(1);
 }
 
@@ -518,20 +546,20 @@ void parse_init_char_tables() {
 }
 
 strings_id_t parse_permanent_identifier() {
-  size_t start_index = parse_read_buffer_index;;
+  size_t start_index = current_location.index;;
   char c = peek_char();
   if (parse_identifier_start_chars[(size_t) c]) {
     do {
       advance_char();
       c = peek_char();
     } while (parse_identifier_rest_chars[(size_t) c]);
-    size_t length = parse_read_buffer_index - start_index;
+    size_t length = current_location.index - start_index;
     return strings_id(&parse_read_buffer[start_index], length);
   } else {
     advance_char();
-    parse_log_location();
+    parse_log_current_location();
     log_line("Expected identifier.");
-    parse_log_current_line_with_location_marker();
+    parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
     return 0;
   }
@@ -559,9 +587,9 @@ strings_id_t parse_type() {
     } while (parse_identifier_rest_chars[(size_t) c]);
   } else {
     advance_char();
-    parse_log_location();
+    parse_log_current_location();
     log_line("Expected identifier for type.");
-    parse_log_current_line_with_location_marker();
+    parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
     return 0;
   }
@@ -638,11 +666,11 @@ void parse_call_arguments(strings_id_t name) {
     parse_expression_index = parse_expression_index + 1;
     expect_comma = false;
   } else {
-    parse_log_location();
+    parse_log_current_location();
     log_string("Unknown function '");
     log_string(strings_pointers[name]);
     log_line("'.");
-    parse_log_current_line_with_location_marker();
+    parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
   }
 }
@@ -651,13 +679,14 @@ void parse_expression_helper() {
   do {
     parse_skip_whitespace();
     if (expect_comma && !parse_exactly(",")) {
-      parse_log_location();
+      parse_log_current_location();
       log_line("Expected ',' to continue argument list.");
-      parse_log_current_line_with_location_marker();
+      parse_log_current_location_line_with_column_marker();
       syscall_exit(1);
     }
     char c = peek_char();
     if (parse_identifier_start_chars[(size_t) c]) {
+      location_t identifier_location = current_location;
       strings_id_t name = parse_permanent_identifier();
       parse_skip_whitespace();
       size_t local_variable_index;
@@ -688,11 +717,14 @@ void parse_expression_helper() {
             parse_expression_index = parse_expression_index + 1;
             expect_comma = true;
           } else {
-            parse_log_location();
+            /* Advance the identifier location because we saved it at the
+               character _before_ the identifier began. */
+            advance_location(&identifier_location);
+            parse_log_location(identifier_location);
             log_string("Unknown variable '");
             log_string(strings_pointers[name]);
             log_line("'.");
-            parse_log_current_line_with_location_marker();
+            parse_log_location_line_with_column_marker(identifier_location);
             syscall_exit(1);
           }
           break;
@@ -703,15 +735,15 @@ void parse_expression_helper() {
       } while (parse_digit_chars[(size_t) peek_char()]);
       char signedness = parse_char();
       if (signedness != 'i' && signedness != 'u') {
-        parse_log_location();
+        parse_log_current_location();
         log_line("Expected 'u' or 'i' after digits to specify signedness.");
-        parse_log_current_line_with_location_marker();
+        parse_log_current_location_line_with_column_marker();
         syscall_exit(1);
       }
       if (!parse_digit_chars[(size_t) parse_char()]) {
-        parse_log_location();
+        parse_log_current_location();
         log_line("Expected digits after signedness to specify size.");
-        parse_log_current_line_with_location_marker();
+        parse_log_current_location_line_with_column_marker();
         syscall_exit(1);
       }
       while (parse_digit_chars[(size_t) peek_char()]) {
@@ -719,9 +751,9 @@ void parse_expression_helper() {
       }
     } else {
       advance_char();
-      parse_log_location();
+      parse_log_current_location();
       log_line("Expected identifier or number literal.");
-      parse_log_current_line_with_location_marker();
+      parse_log_current_location_line_with_column_marker();
       syscall_exit(1);
     }
   } while (expression_stack_index >= 0 && expression_stack[expression_stack_index].operands_left > 0);
@@ -768,9 +800,9 @@ void parse_declaration() {
             };
             return;
           default:
-            parse_log_location();
+            parse_log_current_location();
             log_line("Expected ',' or ';'.");
-            parse_log_current_line_with_location_marker();
+            parse_log_current_location_line_with_column_marker();
             syscall_exit(1);
         }
       }
@@ -783,9 +815,9 @@ void parse_declaration() {
       strings_id_t fn_name = parse_permanent_identifier();
       parse_skip_whitespace();
       if (!parse_exactly("(")) {
-        parse_log_location();
+        parse_log_current_location();
         log_line("Expected '(' to begin argument list.");
-        parse_log_current_line_with_location_marker();
+        parse_log_current_location_line_with_column_marker();
         syscall_exit(1);
       }
       char first_char_of_arg_list = peek_char();
@@ -806,9 +838,9 @@ void parse_declaration() {
               goto finished_arg_list;
               break;
             default:
-              parse_log_location();
+              parse_log_current_location();
               log_line("Expected ',' or ')'.");
-              parse_log_current_line_with_location_marker();
+              parse_log_current_location_line_with_column_marker();
               syscall_exit(1);
               break;
           }
@@ -819,9 +851,9 @@ void parse_declaration() {
 finished_arg_list:
       parse_skip_whitespace();
       if (!parse_exactly("{")) {
-        parse_log_location();
+        parse_log_current_location();
         log_line("Expected '{' after argument list to begin function body.");
-        parse_log_current_line_with_location_marker();
+        parse_log_current_location_line_with_column_marker();
         syscall_exit(1);
       }
       parse_fn_signatures[fn_name] = signature;
@@ -900,16 +932,16 @@ finished_arg_list:
             advance_char();
             parse_call_expression(name);
           } else {
-            parse_log_location();
+            parse_log_current_location();
             log_line("Expected statement or '}'.");
-            parse_log_current_line_with_location_marker();
+            parse_log_current_location_line_with_column_marker();
             syscall_exit(1);
           }
         } else {
           advance_char();
-          parse_log_location();
+          parse_log_current_location();
           log_line("Expected statement or '}'.");
-          parse_log_current_line_with_location_marker();
+          parse_log_current_location_line_with_column_marker();
           syscall_exit(1);
         }
       }
@@ -958,13 +990,13 @@ void parse_file(char const* filename) {
         syscall_exit(1);
       }
     }
-    parse_current_filename = filename;
+    current_filename = filename;
     parse_skip_whitespace();
     while (peek_char()) {
       parse_declaration();
       parse_skip_whitespace();
     }
-    parse_current_filename = 0;
+    current_filename = 0;
   } else {
     log_string("Got unix error code while trying to open \"");
     log_string(filename);

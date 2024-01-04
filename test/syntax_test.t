@@ -149,6 +149,29 @@ FUNCTIONS
             ^
   [1]
 
+  $ test <<\.
+  > fn abc() {
+  >   :if test
+  > }
+  > .
+  bad.minc:2:8: Unknown variable 'test'.
+  2 |   :if test
+            ^
+  [1]
+
+  $ test <<\.
+  > fn f() {
+  >   x = 5u8
+  > }
+  > fn g() {
+  >   f()
+  > }
+  > .
+  bad.minc:5:6: Expected identifier or number literal.
+  5 |   f()
+          ^
+  [1]
+
 TYPES
 
 Named types.
