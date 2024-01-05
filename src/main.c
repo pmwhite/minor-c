@@ -606,11 +606,15 @@ strings_id_t parse_type() {
   return strings_id(parse_type_buffer, parse_type_buffer_index);
 }
 
+typedef struct parse_local_variable_t {
+  strings_id_t name;
+  strings_id_t type;
+} parse_local_variable_t;
+
 typedef struct parse_fn_signature_t {
   bool_t exists;
   u16_t arity;
-  strings_id_t arg_names[14];
-  strings_id_t arg_types[14];
+  parse_local_variable_t args[14];
   strings_id_t return_type;
 } parse_fn_signature_t;
 
@@ -620,11 +624,6 @@ typedef u8_t expression_kind_t;
 #define expression_kind_operation 0
 #define expression_kind_integer 1
 #define expression_kind_identifier 2
-
-typedef struct parse_local_variable_t {
-  strings_id_t name;
-  strings_id_t type;
-} parse_local_variable_t;
 
 parse_local_variable_t parse_local_variables[MAX_LOCAL_VARIABLES];
 size_t parse_local_variables_index = 0;
@@ -693,17 +692,16 @@ void parse_expression(u8_t depth) {
     location_t name_location = current_location;
     strings_id_t name = parse_permanent_identifier();
     parse_skip_whitespace();
-    size_t local_variable_index;
-    bool_t found_variable;
-    parse_local_variable_t variable;
     switch(peek_char()) {
       case '(':
         advance_char();
         parse_call_arguments(depth + 1, name_location, name);
         break;
       default:
-        local_variable_index = 0;
-        found_variable = false;
+        (void) 0;
+        size_t local_variable_index = 0;
+        bool_t found_variable = false;
+        parse_local_variable_t variable;
         while (local_variable_index < parse_local_variables_index) {
           variable = parse_local_variables[local_variable_index];
           if (variable.name == name) {
@@ -814,12 +812,17 @@ void parse_declaration() {
       char first_char_of_arg_list = peek_char();
       parse_fn_signature_t signature = {0};
       signature.exists = true;
+      parse_local_variables_index = 0;
       if (first_char_of_arg_list != ')') {
         while (true) {
-          signature.arg_names[signature.arity] = parse_permanent_identifier();
+          parse_local_variable_t variable = {0};
+          variable.name = parse_permanent_identifier();
           parse_skip_whitespace();
-          signature.arg_types[signature.arity] = parse_type();
+          variable.type = parse_type();
+          signature.args[signature.arity] = variable;
+          parse_local_variables[signature.arity] = variable;
           signature.arity = signature.arity + 1;
+          parse_local_variables_index = signature.arity;
           parse_skip_whitespace();
           switch (parse_char()) {
             case ',':
@@ -1056,9 +1059,10 @@ i32_t main(i32_t argc, char* argv[]) {
         log_string("(");
         size_t args_index = 0;
         while (args_index < signature.arity) {
-          log_string(strings_pointers[signature.arg_names[args_index]]);
+          parse_local_variable_t arg = signature.args[args_index];
+          log_string(strings_pointers[arg.name]);
           log_string(" ");
-          log_string(strings_pointers[signature.arg_types[args_index]]);
+          log_string(strings_pointers[arg.type]);
           args_index = args_index + 1;
           if (args_index == signature.arity) {
             log_line(") { ... }");

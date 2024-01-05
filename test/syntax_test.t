@@ -161,7 +161,6 @@ FUNCTIONS
 
   $ test <<\.
   > fn f() {
-  >   x = 5u8
   > }
   > fn g() {
   >   f()
@@ -177,6 +176,16 @@ FUNCTIONS
   2 |   f()
         ^
   [1]
+
+  $ test <<\.
+  > fn f(x i32) {
+  > }
+  > fn g(x i32) {
+  >   f(x)
+  > }
+  > .
+  g(x i32) { ... }
+  f(x i32) { ... }
 
 TYPES
 
