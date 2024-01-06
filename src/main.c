@@ -11,7 +11,7 @@
 #define MAX_U16 65536
 #define STRINGS_DATA_LENGTH HUNDRED_MB
 #define STRUCT_FIELDS_LENGTH MAX_U16
-#define PARSE_TYPE_BUFFER_LENGTH MAX_U16
+#define MAX_ARRAY_LENGTHS MAX_U16
 #define PARSE_READ_BUFFER_CAPACITY TEN_MB
 #define MAX_LINE_LENGTH_FOR_ERRORS 120
 #define NAMES_IN_SCOPE_LENGTH MAX_U16
@@ -319,33 +319,6 @@ strings_id_t strings_id(char* string, size_t length) {
 
 /* -------------------------------------------------------------------------------- */
 
-typedef struct struct_field_t {
-  strings_id_t name;
-  strings_id_t type;
-} struct_field_t;
-
-typedef struct struct_info_t {
-  u16_t field_count;
-  u16_t first_field_index;
-  bool_t exists;
-} struct_info_t;
-
-struct_field_t struct_fields[STRUCT_FIELDS_LENGTH];
-size_t struct_fields_index = 0;
-struct_info_t struct_infos[STRINGS_ID_MAP_LENGTH];
-
-void types_add_struct_field(struct_field_t field) {
-  if (struct_fields_index < STRUCT_FIELDS_LENGTH) {
-    struct_fields[struct_fields_index] = field;
-    struct_fields_index = struct_fields_index + 1;
-  } else {
-    log_string("Attempted to add the struct field \"");
-    log_string(strings_pointers[field.name]);
-    log_line("\" but the internal struct field array is already full.");
-    syscall_exit(1);
-  }
-}
-
 typedef struct location_t {
   size_t line;
   size_t column;
@@ -565,50 +538,98 @@ strings_id_t parse_permanent_identifier() {
   }
 }
 
-char parse_type_buffer[PARSE_TYPE_BUFFER_LENGTH];
-size_t parse_type_buffer_index = 0;
+u64_t array_lengths[MAX_ARRAY_LENGTHS];
+size_t array_lengths_index = 0;
 
-void parse_type_buffer_append_char(char c) {
-  if (parse_type_buffer_index == PARSE_TYPE_BUFFER_LENGTH) {
-    log_line("Failed to parse type because it exceeded the maximum length for a type.");
-  }
-  parse_type_buffer[parse_type_buffer_index] = c;
-  parse_type_buffer_index = parse_type_buffer_index + 1;
+typedef struct type_t {
+  /* The named type from which this type is derived. */
+  strings_id_t base;
+  /* For example, i32*** has three modifiers (each pointer is a modifier). */
+  u8_t modifier_count;
+  /* The modifier_count least significant bits say whether each modifier is a pointer (0) or an array (1) */
+  u8_t modifiers;
+  /* If any of the modifiers are arrays, then the lengths of those arrays will
+     be stored in array_lengths, starting at first_array_length_index. */
+  u16_t first_array_length_index;
+} type_t;
+
+u64_t parse_integer_literal() {
+  parse_log_current_location();
+  log_line("The compiler does not yet support parsing integer literals.");
+  parse_log_current_location_line_with_column_marker();
+  syscall_exit(1);
+  return 0;
 }
 
-strings_id_t parse_type() {
-  char c = peek_char();
-  parse_type_buffer_index = 0;
-  if (parse_identifier_start_chars[(size_t) c]) {
-    do {
-      parse_type_buffer_append_char(c);
-      advance_char();
-      c = peek_char();
-    } while (parse_identifier_rest_chars[(size_t) c]);
-  } else {
-    advance_char();
+type_t parse_type() {
+  if (!parse_exactly("`")) {
     parse_log_current_location();
-    log_line("Expected identifier for type.");
+    log_line("Expected '`' to begin type.");
     parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
-    return 0;
+    return (type_t) {0};
   }
+  strings_id_t base = parse_permanent_identifier();
+  type_t result = {
+    .base = base,
+    .modifier_count = 0,
+    .modifiers = 0,
+    .first_array_length_index = array_lengths_index
+  };
   while (true) {
-    parse_skip_whitespace();
     char c = peek_char();
     if (c == '*') {
-      parse_type_buffer_append_char(c);
       advance_char();
+      result.modifier_count = result.modifier_count << 1;
+    } else if (c == '[') {
+      advance_char();
+      if (array_lengths_index < MAX_ARRAY_LENGTHS) {
+        u64_t length = parse_integer_literal();
+        array_lengths[array_lengths_index] = length;
+      } else {
+        parse_log_current_location();
+        log_line("Not allowed to have any more array types.");
+        parse_log_current_location_line_with_column_marker();
+        syscall_exit(1);
+        return (type_t) {0};
+      }
     } else {
       break;
     }
   }
-  return strings_id(parse_type_buffer, parse_type_buffer_index);
+  return result;
+}
+
+typedef struct struct_field_t {
+  strings_id_t name;
+  type_t type;
+} struct_field_t;
+
+typedef struct struct_info_t {
+  u16_t field_count;
+  u16_t first_field_index;
+  bool_t exists;
+} struct_info_t;
+
+struct_field_t struct_fields[STRUCT_FIELDS_LENGTH];
+size_t struct_fields_index = 0;
+struct_info_t struct_infos[STRINGS_ID_MAP_LENGTH];
+
+void types_add_struct_field(struct_field_t field) {
+  if (struct_fields_index < STRUCT_FIELDS_LENGTH) {
+    struct_fields[struct_fields_index] = field;
+    struct_fields_index = struct_fields_index + 1;
+  } else {
+    log_string("Attempted to add the struct field \"");
+    log_string(strings_pointers[field.name]);
+    log_line("\" but the internal struct field array is already full.");
+    syscall_exit(1);
+  }
 }
 
 typedef struct parse_local_variable_t {
   strings_id_t name;
-  strings_id_t type;
+  type_t type;
 } parse_local_variable_t;
 
 typedef struct parse_fn_signature_t {
@@ -773,7 +794,7 @@ void parse_declaration() {
       while (true) {
         strings_id_t field_name = parse_permanent_identifier();
         parse_skip_whitespace();
-        strings_id_t field_type = parse_type();
+        type_t field_type = parse_type();
         struct_field_t field = { .name = field_name, .type = field_type };
         types_add_struct_field(field);
         parse_skip_whitespace();
@@ -920,7 +941,7 @@ finished_arg_list:
             parse_expression(0);
             parse_local_variables[parse_local_variables_index] = (parse_local_variable_t) {
               .name = name,
-              .type = 0
+              .type = {0}
             };
             parse_local_variables_index = parse_local_variables_index + 1;
           } else if (c == '(') {
@@ -1021,57 +1042,6 @@ i32_t main(i32_t argc, char* argv[]) {
     while (arg_index < argc) {
       parse_file(argv[arg_index]);
       arg_index = arg_index + 1;
-    }
-    size_t infos_index = 0;
-    bool_t after_first_struct = false;
-    while (infos_index < STRINGS_ID_MAP_LENGTH) {
-      struct_info_t info = struct_infos[infos_index];
-      if (info.exists) {
-        if (after_first_struct) {
-          log_newline();
-        } else {
-          after_first_struct = true;
-        }
-        log_line(strings_pointers[infos_index]);
-        log_indent();
-        size_t fields_index = 0;
-        while (fields_index < info.field_count) {
-          struct_field_t field = struct_fields[info.first_field_index + fields_index];
-          log_string(strings_pointers[field.name]);
-          log_string(" ");
-          log_string(strings_pointers[field.type]);
-          fields_index = fields_index + 1;
-          if (fields_index == info.field_count) {
-            log_line(";");
-          } else {
-            log_line(",");
-          }
-        }
-        log_dedent();
-      }
-      infos_index = infos_index + 1;
-    }
-    size_t signatures_index = 0;
-    while (signatures_index < STRINGS_ID_MAP_LENGTH) {
-      parse_fn_signature_t signature = parse_fn_signatures[signatures_index];
-      if (signature.exists) {
-        log_string(strings_pointers[signatures_index]);
-        log_string("(");
-        size_t args_index = 0;
-        while (args_index < signature.arity) {
-          parse_local_variable_t arg = signature.args[args_index];
-          log_string(strings_pointers[arg.name]);
-          log_string(" ");
-          log_string(strings_pointers[arg.type]);
-          args_index = args_index + 1;
-          if (args_index == signature.arity) {
-            log_line(") { ... }");
-          } else {
-            log_string(", ");
-          }
-        }
-      }
-      signatures_index = signatures_index + 1;
     }
   } else if (string_equal("sizes", command)) {
     log_string("struct_field_t: ");

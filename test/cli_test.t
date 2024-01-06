@@ -15,16 +15,13 @@ An error message is displayed when the specified command is unrecognized.
 Passing multiple files works.
 
   $ cat > fns1.minc <<\.
-  > fn f(a i32, b i32) {}
-  > fn g(x f32, y f64) { }
+  > fn f(a `i32, b `i32) {}
+  > fn g(x `f32, y `f64) { }
   > .
 
   $ cat > fns2.minc <<\.
-  > fn x(a i32, b i32) {}
+  > fn x(a `i32, b `i32) {}
   > fn y() { }
   > .
 
   $ $MAIN translate fns1.minc fns2.minc
-  g(x f32, y f64) { ... }
-  f(a i32, b i32) { ... }
-  y(x(a i32, b i32) { ... }

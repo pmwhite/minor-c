@@ -4,28 +4,19 @@ STRUCTS
 
   $ test <<\.
   > struct point
-  >   x i32,
-  >   y i32;
+  >   x `i32,
+  >   y `i32;
   > struct color
-  >   r u8,
-  >   g u8,
-  >   b u8,
-  >   a u8;
+  >   r `u8,
+  >   g `u8,
+  >   b `u8,
+  >   a `u8;
   > .
-  point
-    x i32,
-    y i32;
-  
-  color
-    r u8,
-    g u8,
-    b u8,
-    a u8;
 
   $ test <<\.
   > struct hello world;
   > .
-  bad.minc:1:20: Expected identifier for type.
+  bad.minc:1:20: Expected '`' to begin type.
   1 | struct hello world;
                         ^
   [1]
@@ -40,22 +31,22 @@ STRUCTS
 
   $ test <<\.
   > struct hello
-  >   x i32
-  >   y i32;
+  >   x `i32
+  >   y `i32;
   > .
   bad.minc:3:4: Expected ',' or ';'.
-  3 |   y i32;
+  3 |   y `i32;
         ^
   [1]
 
   $ test <<\.
   > struct hello
-  >   x i32,,
-  >   y i32;
+  >   x `i32,,
+  >   y `i32;
   > .
-  bad.minc:2:10: Expected identifier.
-  2 |   x i32,,
-              ^
+  bad.minc:2:11: Expected identifier.
+  2 |   x `i32,,
+               ^
   [1]
 
   $ test <<\.
@@ -101,11 +92,11 @@ FUNCTIONS
   [1]
 
   $ test <<\.
-  > fn abc(w x y z) {}
+  > fn abc(w `x y `z) {}
   > .
-  bad.minc:1:13: Expected ',' or ')'.
-  1 | fn abc(w x y z) {}
-                 ^
+  bad.minc:1:14: Expected ',' or ')'.
+  1 | fn abc(w `x y `z) {}
+                  ^
   [1]
 
   $ test <<\.
@@ -178,27 +169,23 @@ FUNCTIONS
   [1]
 
   $ test <<\.
-  > fn f(x i32) {
+  > fn f(x `i32) {
   > }
-  > fn g(x i32) {
+  > fn g(x `i32) {
   >   f(x)
   > }
   > .
-  g(x i32) { ... }
-  f(x i32) { ... }
 
 TYPES
 
 Named types.
 
   $ test <<\.
-  > fn abc(a b) { }
+  > fn abc(a `b) { }
   > .
-  abc(a b) { ... }
 
 Pointer types.
 
   $ test <<\.
-  > fn abc(a b*) { }
+  > fn abc(a `b*) { }
   > .
-  abc(a b*) { ... }
