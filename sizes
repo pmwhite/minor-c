@@ -1,5 +1,6 @@
-struct_field_t: 4
+type_t: 6
+struct_field_t: 8
 struct_info_t: 6
-parse_fn_signature_t: 62
-parse_local_variable_t: 4
+parse_fn_signature_t: 118
+parse_local_variable_t: 8
 expression_t: 4

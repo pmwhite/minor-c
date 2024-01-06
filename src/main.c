@@ -9,17 +9,15 @@
 #define TEN_MB 10485760 
 #define HUNDRED_MB 104857600
 #define MAX_U16 65536
-#define STRINGS_DATA_LENGTH HUNDRED_MB
-#define STRUCT_FIELDS_LENGTH MAX_U16
-#define MAX_ARRAY_LENGTHS MAX_U16
 #define PARSE_READ_BUFFER_CAPACITY TEN_MB
 #define MAX_LINE_LENGTH_FOR_ERRORS 120
-#define NAMES_IN_SCOPE_LENGTH MAX_U16
 #define STRINGS_ID_MAP_LENGTH MAX_U16
-#define MAX_FN_ARITY 14
+#define EXPRESSION_PARSING_RECURSION_LIMIT 255
+#define MAX_STRINGS_DATA HUNDRED_MB
+#define MAX_STRUCT_FIELDS MAX_U16
+#define MAX_ARRAY_LENGTHS MAX_U16
 #define MAX_LOCAL_VARIABLES 1024
 #define MAX_EXPRESSIONS TEN_MB
-#define MAX_EXPRESSION_DEPTH 255
 
 /* -------------------------------------------------------------------------------- */
 
@@ -213,6 +211,15 @@ void log_line(char* s) {
 
 /* -------------------------------------------------------------------------------- */
 
+void ensure_array_space(size_t current_length, size_t capacity, char* array_name) {
+  if (current_length >= capacity) {
+    log_string("The compiler has reached the capacity of its '");
+    log_string(array_name);
+    log_line("' array and cannot continue.");
+    syscall_exit(1);
+  }
+}
+
 /* --------------------------------------------------------------------------------
  * STRINGS
  *
@@ -223,12 +230,12 @@ void log_line(char* s) {
  * hashmap.
  * -------------------------------------------------------------------------------- */
 
-char strings_data[STRINGS_DATA_LENGTH] = {0};
+char strings_data[MAX_STRINGS_DATA] = {0};
 size_t strings_data_index = 0;
-
 
 /* The index into this array must be representable by 16 bits. */
 char* strings_pointers[STRINGS_ID_MAP_LENGTH];
+size_t strings_pointers_count = 0;
 
 typedef u16_t strings_id_t;
 
@@ -261,6 +268,7 @@ bool_t check_candidate(char* candidate, char* target, size_t length) {
    present; if it is, it returns the key. Otherwise it inserts the given string
    into the hashmap using an arbitrary key and returns that key. */
 strings_id_t strings_id(char* string, size_t length) {
+  ensure_array_space(strings_pointers_count, STRINGS_ID_MAP_LENGTH, "strings_pointers");
   size_t i;
   u32_t hash = FNV_OFFSET_BASIS;
   u16_t final_hash;
@@ -291,12 +299,7 @@ strings_id_t strings_id(char* string, size_t length) {
     } else {
       /* The candidate being the null pointer indicates that the slot is free,
          which means we should fill it in with the input string. */
-      if (strings_data_index + length >= STRINGS_DATA_LENGTH) {
-        log_string("Attempted to add the string \"");
-        log_lstring(string, length);
-        log_string("\" to the internal identifier hashmap, but the limit of 100MB of total characters has already been reached.");
-        syscall_exit(1);
-      }
+      ensure_array_space(strings_data_index + length, MAX_STRINGS_DATA, "strings_data");
       strings_pointers[candidate_index] = &strings_data[strings_data_index];
       i = 0;
       while (i < length) {
@@ -306,14 +309,12 @@ strings_id_t strings_id(char* string, size_t length) {
       }
       strings_data[strings_data_index] = 0;
       strings_data_index = strings_data_index + 1;
+      strings_pointers_count = strings_pointers_count + 1;
       return candidate_index;
     }
     candidate_index = candidate_index + 1;
   } while (candidate_index != final_hash);
-  log_string("Attempted to add the string \"");
-  log_lstring(string, length);
-  log_string("\" to the internal identifier hashmap, but the hashmap was full.");
-  syscall_exit(1);
+  log_line("impossible");
   return 0;
 }
 
@@ -583,16 +584,9 @@ type_t parse_type() {
       result.modifier_count = result.modifier_count << 1;
     } else if (c == '[') {
       advance_char();
-      if (array_lengths_index < MAX_ARRAY_LENGTHS) {
-        u64_t length = parse_integer_literal();
-        array_lengths[array_lengths_index] = length;
-      } else {
-        parse_log_current_location();
-        log_line("Not allowed to have any more array types.");
-        parse_log_current_location_line_with_column_marker();
-        syscall_exit(1);
-        return (type_t) {0};
-      }
+      ensure_array_space(array_lengths_index, MAX_ARRAY_LENGTHS, "array_lengths");
+      u64_t length = parse_integer_literal();
+      array_lengths[array_lengths_index] = length;
     } else {
       break;
     }
@@ -611,21 +605,9 @@ typedef struct struct_info_t {
   bool_t exists;
 } struct_info_t;
 
-struct_field_t struct_fields[STRUCT_FIELDS_LENGTH];
+struct_field_t struct_fields[MAX_STRUCT_FIELDS];
 size_t struct_fields_index = 0;
 struct_info_t struct_infos[STRINGS_ID_MAP_LENGTH];
-
-void types_add_struct_field(struct_field_t field) {
-  if (struct_fields_index < STRUCT_FIELDS_LENGTH) {
-    struct_fields[struct_fields_index] = field;
-    struct_fields_index = struct_fields_index + 1;
-  } else {
-    log_string("Attempted to add the struct field \"");
-    log_string(strings_pointers[field.name]);
-    log_line("\" but the internal struct field array is already full.");
-    syscall_exit(1);
-  }
-}
 
 typedef struct parse_local_variable_t {
   strings_id_t name;
@@ -664,7 +646,7 @@ size_t parse_expression_index = 0;
 void parse_expression(u8_t depth);
 
 void parse_call_arguments(u8_t depth, location_t name_location, strings_id_t name) {
-  if (depth >= MAX_EXPRESSION_DEPTH) {
+  if (depth >= EXPRESSION_PARSING_RECURSION_LIMIT) {
     log_line("Reached max expression depth.");
     syscall_exit(1);
   }
@@ -704,7 +686,7 @@ void parse_call_arguments(u8_t depth, location_t name_location, strings_id_t nam
 }
 
 void parse_expression(u8_t depth) {
-  if (depth == MAX_EXPRESSION_DEPTH) {
+  if (depth == EXPRESSION_PARSING_RECURSION_LIMIT) {
     log_line("Reached max expression depth.");
     syscall_exit(1);
   }
@@ -796,7 +778,9 @@ void parse_declaration() {
         parse_skip_whitespace();
         type_t field_type = parse_type();
         struct_field_t field = { .name = field_name, .type = field_type };
-        types_add_struct_field(field);
+        ensure_array_space(struct_fields_index, MAX_STRUCT_FIELDS, "struct_fields");
+        struct_fields[struct_fields_index] = field;
+        struct_fields_index = struct_fields_index + 1;
         parse_skip_whitespace();
         switch (parse_char()) {
           case ',':
@@ -1044,6 +1028,9 @@ i32_t main(i32_t argc, char* argv[]) {
       arg_index = arg_index + 1;
     }
   } else if (string_equal("sizes", command)) {
+    log_string("type_t: ");
+    log_size(sizeof(type_t));
+    log_newline();
     log_string("struct_field_t: ");
     log_size(sizeof(struct_field_t));
     log_newline();
