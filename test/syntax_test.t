@@ -193,10 +193,28 @@ Operator expressions.
   >   y = x + 1i32
   > }
   > .
-  bad.minc:2:10: Expected statement or '}'.
-  2 |   y = x + 1i32
-              ^
+
+  $ test <<\.
+  > fn f(x `i32) {
+  >   y = x + 1i32 - 10i32
+  > }
+  > .
+  bad.minc:2:17: Expected statement or '}'.
+  2 |   y = x + 1i32 - 10i32
+                     ^
   [1]
+
+  $ test <<\.
+  > fn f(x `i32) {
+  >   y = x + (1i32 - 10i32)
+  > }
+  > .
+
+  $ test <<\.
+  > fn f(x `i32) {
+  >   y = (x + 1i32) -*< 10i32
+  > }
+  > .
 
 TYPES
 

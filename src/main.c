@@ -502,6 +502,7 @@ void parse_error_expected_control_flow_keyword() {
 u8_t parse_identifier_start_chars[256];
 u8_t parse_identifier_rest_chars[256];
 u8_t parse_digit_chars[256];
+u8_t parse_operator_chars[256];
 
 void parse_init_char_tables() {
   size_t c = 'a' - 1;
@@ -517,6 +518,19 @@ void parse_init_char_tables() {
     c = c + 1;
   }
   parse_identifier_rest_chars['_'] = 1;
+  parse_operator_chars['<'] = 1;
+  parse_operator_chars['>'] = 1;
+  parse_operator_chars['+'] = 1;
+  parse_operator_chars['-'] = 1;
+  parse_operator_chars['*'] = 1;
+  parse_operator_chars['/'] = 1;
+  parse_operator_chars['='] = 1;
+  parse_operator_chars['&'] = 1;
+  parse_operator_chars['|'] = 1;
+  parse_operator_chars['$'] = 1;
+  parse_operator_chars['!'] = 1;
+  parse_operator_chars['?'] = 1;
+  parse_operator_chars['^'] = 1;
 }
 
 strings_id_t parse_permanent_identifier() {
@@ -533,6 +547,26 @@ strings_id_t parse_permanent_identifier() {
     advance_char();
     parse_log_current_location();
     log_line("Expected identifier.");
+    parse_log_current_location_line_with_column_marker();
+    syscall_exit(1);
+    return 0;
+  }
+}
+
+strings_id_t parse_operator() {
+  size_t start_index = current_location.index;;
+  char c = peek_char();
+  if (parse_operator_chars[(size_t) c]) {
+    do {
+      advance_char();
+      c = peek_char();
+    } while (parse_operator_chars[(size_t) c]);
+    size_t length = current_location.index - start_index;
+    return strings_id(&parse_read_buffer[start_index], length);
+  } else {
+    advance_char();
+    parse_log_current_location();
+    log_line("Expected operator.");
     parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
     return 0;
@@ -716,7 +750,7 @@ void parse_call_arguments(u8_t depth, location_t name_location, strings_id_t nam
   }
 }
 
-void parse_expression(u8_t depth) {
+void parse_non_operator_expression(u8_t depth) {
   if (depth == EXPRESSION_PARSING_RECURSION_LIMIT) {
     log_line("Reached max expression depth.");
     syscall_exit(1);
@@ -805,6 +839,32 @@ void parse_expression(u8_t depth) {
     log_line("Expected identifier, number literal, or '('.");
     parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
+  }
+}
+
+void parse_expression(u8_t depth) {
+  size_t left_operand_index = parse_expression_index;
+  parse_non_operator_expression(depth + 1);
+  parse_skip_whitespace();
+  char c = peek_char();
+  if (parse_operator_chars[(size_t) c]) {
+    /* When we see and operator, we need to shift all the previous expressions
+       over by one to make space for the operator's expression to go before all
+       of its operands (like how function expressions work). */
+    strings_id_t operator_name = parse_operator();
+    size_t i = parse_expression_index + 1;
+    while (i > left_operand_index) {
+      parse_expressions[i] = parse_expressions[i - 1];
+      i = i - 1;
+    }
+    parse_expressions[i] = (expression_t) {
+      .kind = expression_kind_operator,
+      .arity = 2,
+      .data = operator_name
+    };
+    parse_expression_index = parse_expression_index + 1;
+    parse_skip_whitespace();
+    parse_non_operator_expression(depth + 1);
   }
 }
 
