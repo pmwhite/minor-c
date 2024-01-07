@@ -652,18 +652,22 @@ parse_fn_signature_t parse_fn_signatures[STRINGS_ID_MAP_LENGTH];
 
 typedef u8_t expression_kind_t;
 #define expression_kind_operation 0
-#define expression_kind_integer 1
-#define expression_kind_identifier 2
+#define expression_kind_operator 1
+#define expression_kind_integer 2
+#define expression_kind_identifier 3
+#define expression_kind_group 4
 
 parse_local_variable_t parse_local_variables[MAX_LOCAL_VARIABLES];
 size_t parse_local_variables_index = 0;
 
 typedef struct expression_t {
   expression_kind_t kind;
-  /* Arity is the number of operands passed to the operation. */
+  /* Arity is the number of child expression. The field is not needed for
+     operator or group expressions, since the arity is always 2 or 1
+     respectively, but it _is_ needed for function calls. */
   u8_t arity;
-  /* Data is the id for one of (a) the name of the operation, (b) the
-     identifier, or (c) the digits of the integer, depending on the kind. */
+  /* Data is the id for one of (a) the name of the operation or operator, (b)
+     the identifier, or (c) the digits of the integer, depending on the kind. For groups, data is  */
   strings_id_t data;
 } expression_t;
 

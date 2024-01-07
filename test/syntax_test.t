@@ -176,6 +176,8 @@ FUNCTIONS
   > }
   > .
 
+Operator expressions.
+
 TYPES
 
 Named types.
