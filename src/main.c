@@ -554,12 +554,33 @@ typedef struct type_t {
   u16_t first_array_length_index;
 } type_t;
 
-u64_t parse_integer_literal() {
-  parse_log_current_location();
-  log_line("The compiler does not yet support parsing integer literals.");
-  parse_log_current_location_line_with_column_marker();
-  syscall_exit(1);
-  return 0;
+u64_t parse_array_size() {
+  u64_t current = 0;
+  size_t c = (size_t) parse_char();
+  if (parse_digit_chars[c]) {
+    current = c - '0';
+  }
+  while (true) {
+    c = (size_t) peek_char();
+    if (parse_digit_chars[c]) {
+      advance_char();
+      size_t next = current * 10 + c - '0';
+      /* If incorporating a digit causes the accumulated value to go down, then
+         we must have overflowed, which means the literal denotes an
+         unrepresentable integer (at least, it is unrepresentable in 64 bits,
+         which is the size we care about).. */
+      if (next < current) {
+        parse_log_current_location();
+        log_line("Array size too large; it must be representable in 64 bits.");
+        parse_log_current_location_line_with_column_marker();
+        syscall_exit(1);
+      }
+      current = next;
+    } else {
+      break;
+    }
+  }
+  return current;
 }
 
 type_t parse_type() {
@@ -568,7 +589,6 @@ type_t parse_type() {
     log_line("Expected '`' to begin type.");
     parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
-    return (type_t) {0};
   }
   strings_id_t base = parse_permanent_identifier();
   type_t result = {
@@ -585,8 +605,15 @@ type_t parse_type() {
     } else if (c == '[') {
       advance_char();
       ensure_array_space(array_lengths_index, MAX_ARRAY_LENGTHS, "array_lengths");
-      u64_t length = parse_integer_literal();
+      u64_t length = parse_array_size();
       array_lengths[array_lengths_index] = length;
+      array_lengths_index = array_lengths_index + 1;
+      if (!parse_exactly("]")) {
+        parse_log_current_location();
+        log_line("Expected ']' after array size.");
+        parse_log_current_location_line_with_column_marker();
+        syscall_exit(1);
+      }
     } else {
       break;
     }

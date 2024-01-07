@@ -189,3 +189,17 @@ Pointer types.
   $ test <<\.
   > fn abc(a `b*) { }
   > .
+
+Array types.
+
+  $ test <<\.
+  > fn abc(a `b*[100]) { }
+  > .
+
+  $ test <<\.
+  > fn abc(a `b*[1000000000000000000000000000000000]) { }
+  > .
+  bad.minc:1:35: Array size too large; it must be representable in 64 bits.
+  1 | fn abc(a `b*[1000000000000000000000000000000000]) { }
+                                       ^
+  [1]
