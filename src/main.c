@@ -320,6 +320,21 @@ strings_id_t strings_id(char* string, size_t length) {
 
 /* -------------------------------------------------------------------------------- */
 
+/* --------------------------------------------------------------------------------
+ * BUILT-IN STRINGS
+ *
+ * Some identifiers are special for the compiler. For example, all the
+ * primitive types and keywords.
+ * -------------------------------------------------------------------------------- */
+
+strings_id_t builtin_strings_void;
+
+void builtin_strings_init() {
+  builtin_strings_void = strings_id("void", 4);
+}
+
+/* -------------------------------------------------------------------------------- */
+
 typedef struct location_t {
   size_t line;
   size_t column;
@@ -679,7 +694,7 @@ typedef struct parse_fn_signature_t {
   bool_t exists;
   u16_t arity;
   parse_local_variable_t args[14];
-  strings_id_t return_type;
+  type_t return_type;
 } parse_fn_signature_t;
 
 parse_fn_signature_t parse_fn_signatures[STRINGS_ID_MAP_LENGTH];
@@ -955,6 +970,12 @@ void parse_declaration() {
       }
 finished_arg_list:
       parse_skip_whitespace();
+      if (peek_char() == '`') {
+        signature.return_type = parse_type();
+        parse_skip_whitespace();
+      } else {
+        signature.return_type.base = builtin_strings_void;
+      }
       if (!parse_exactly("{")) {
         parse_log_current_location();
         log_line("Expected '{' after argument list to begin function body.");

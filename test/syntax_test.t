@@ -216,6 +216,14 @@ Operator expressions.
   > }
   > .
 
+Function with return type
+
+  $ test <<\.
+  > fn f(x `i32) `i32 {
+  >   y = (x + 1i32) -*< 10i32
+  > }
+  > .
+
 TYPES
 
 Named types.
