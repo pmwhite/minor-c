@@ -1,4 +1,4 @@
-fn main(argc i32, argv char**) {
+fn main(argc `i32, argv `char**[100]) {
   :if argc < 2
     log_line("Usage: <exe> command file...")
     log_line("Commands:")
