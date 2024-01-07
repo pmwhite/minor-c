@@ -784,10 +784,25 @@ void parse_expression(u8_t depth) {
     while (parse_digit_chars[(size_t) peek_char()]) {
       advance_char();
     }
+  } else if (c == '(') {
+    advance_char();
+    parse_expressions[parse_expression_index] = (expression_t) {
+      .kind = expression_kind_group,
+      .arity = 1,
+      .data = 0
+    };
+    parse_expression_index = parse_expression_index + 1;
+    parse_expression(depth + 1);
+    if (!parse_exactly(")")) {
+      parse_log_current_location();
+      log_line("Expected ')' to finish group expression.");
+      parse_log_current_location_line_with_column_marker();
+      syscall_exit(1);
+    }
   } else {
     advance_char();
     parse_log_current_location();
-    log_line("Expected identifier or number literal.");
+    log_line("Expected identifier, number literal, or '('.");
     parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
   }

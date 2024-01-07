@@ -176,7 +176,27 @@ FUNCTIONS
   > }
   > .
 
+Group expressions.
+
+  $ test <<\.
+  > fn f(x `i32) {
+  > }
+  > fn g(x `i32) {
+  >   y = (((f(x))))
+  > }
+  > .
+
 Operator expressions.
+
+  $ test <<\.
+  > fn f(x `i32) {
+  >   y = x + 1i32
+  > }
+  > .
+  bad.minc:2:10: Expected statement or '}'.
+  2 |   y = x + 1i32
+              ^
+  [1]
 
 TYPES
 
