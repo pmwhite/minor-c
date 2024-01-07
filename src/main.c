@@ -328,9 +328,19 @@ strings_id_t strings_id(char* string, size_t length) {
  * -------------------------------------------------------------------------------- */
 
 strings_id_t builtin_strings_void;
+strings_id_t builtin_strings_if;
+strings_id_t builtin_strings_else;
+strings_id_t builtin_strings_while;
+strings_id_t builtin_strings_return;
+strings_id_t builtin_strings_end;
 
 void builtin_strings_init() {
   builtin_strings_void = strings_id("void", 4);
+  builtin_strings_if = strings_id("if", 2);
+  builtin_strings_else = strings_id("else", 4);
+  builtin_strings_while = strings_id("while", 5);
+  builtin_strings_return = strings_id("return", 6);
+  builtin_strings_end = strings_id("end", 3);
 }
 
 /* -------------------------------------------------------------------------------- */
@@ -855,6 +865,8 @@ void parse_non_operator_expression(u8_t depth) {
     parse_log_current_location_line_with_column_marker();
     syscall_exit(1);
   }
+  parse_skip_whitespace();
+  c = peek_char();
 }
 
 void parse_expression(u8_t depth) {
@@ -1149,6 +1161,7 @@ i32_t main(i32_t argc, char* argv[]) {
       syscall_exit(1);
     }
     parse_init_char_tables();
+    builtin_strings_init();
     i32_t arg_index = 2;
     while (arg_index < argc) {
       parse_file(argv[arg_index]);

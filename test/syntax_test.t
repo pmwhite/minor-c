@@ -216,13 +216,37 @@ Operator expressions.
   > }
   > .
 
-Function with return type
+Function with return type.
 
   $ test <<\.
   > fn f(x `i32) `i32 {
   >   y = (x + 1i32) -*< 10i32
   > }
   > .
+
+Casting expressions.
+
+  $ test <<\.
+  > fn cast_to_void(x `i32) `void* {
+  >   y = cast`void* cast`void* x
+  > }
+  > .
+  bad.minc:2:8: Unknown variable 'cast`void'.
+  2 |   y = cast`void* cast`void* x
+            ^
+  [1]
+
+Type-annotated expressions.
+
+  $ test <<\.
+  > fn cast_to_void(x `i32) `void* {
+  >   y = x`i32`i32
+  > }
+  > .
+  bad.minc:2:8: Unknown variable 'x`i32`i32'.
+  2 |   y = x`i32`i32
+            ^
+  [1]
 
 TYPES
 
