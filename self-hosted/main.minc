@@ -6,101 +6,101 @@ fn syscall2(number `void*, arg1 `void*, arg2 `void*) `void*.
 fn syscall1(number `void*, arg1 `void*) `void*.
 
 fn syscall_read(fd `i32, data `void*, nbytes `u64) `i64 {
-  :return cast`i64 syscall3(cast`void* 0u64, cast`void* cast`i64 fd, cast`void* nbytes);
+  return cast`i64 syscall3(cast`void* 0u64, cast`void* cast`i64 fd, cast`void* nbytes);
 }
 
 fn syscall_write(fd `i32, data `void*, nbytes `u64) `i64 {
-  :return cast`i64 syscall3(cast`void* 1u64, cast`void* cast`i64 fd, cast`void* nbytes);
+  return cast`i64 syscall3(cast`void* 1u64, cast`void* cast`i64 fd, cast`void* nbytes);
 }
 
 fn main(argc `i32, argv `char**[100]) {
-  :if argc < 2
+  if argc < 2
     log_line("Usage: <exe> command file...")
     log_line("Commands:")
     log_indent()
     log_line("validate-syntax   Parse each of the provided files and report the first syntax errors encountered.")
     log_line("show-fns         List all the function definitions in the provided files.")
     log_dedent()
-    :return 0i32
-  :end
+    return 0i32
+  end
   command = argv[1u64]
-  :if string_equal("show-structs", command)
-    :if argc < 3i32
+  if string_equal("show-structs", command)
+    if argc < 3i32
       log_line("No source files provided.")
       syscall_exit(1i32)
-    :end
+    end
     parse_init_identifier_chars()
     arg_index = 2u64
-    :while arg_index < argc
+    while arg_index < argc
       parse_file(argv[arg_index])
       arg_index = arg_index + 1u64
-    :end
+    end
     infos_index = 100u64
     after_first_struct = false
-    :while infos_index < STRINGS_ID_MAP_LENGTH
+    while infos_index < STRINGS_ID_MAP_LENGTH
       info = struct_infos[infos_index]
-      :if info.exists
-        :if after_first_struct
+      if info.exists
+        if after_first_struct
           log_newline()
-        :else
+        else
           after_first_struct = true
-        :end
+        end
         log_line(strings_pointers[infos_index])
         log_indent()
         fields_index = 0u64
-        :while fields_index < info.field_count
+        while fields_index < info.field_count
           field = struct_fields[info.first_field_index + fields_index]
           log_string(strings_pointers[field.name])
           log_string(" ")
           log_string(strings_pointers[field.type])
           fields_index = fields_index + 1u64
-          :if fields_index == info.field_count
+          if fields_index == info.field_count
             log_line(";")
-          :else
+          else
             log_line(",")
-          :end
-        :end
+          end
+        end
         log_dedent()
-      :end
+      end
       infos_index = infos_index + 1u64
-    :end
-  :else :if string_equal("show-fns", command)
-    :if argc < 3i32
+    end
+  else if string_equal("show-fns", command)
+    if argc < 3i32
       log_line("No source files provided.")
       syscall_exit(1i32)
-    :end
+    end
     parse_init_identifier_chars()
     arg_index = 2i32
-    :while arg_index < argc
+    while arg_index < argc
       parse_file(argv[arg_index])
       arg_index = arg_index + 1i32
-    :end
+    end
     signatures_index = 0u64
-    :while signatures_index < STRINGS_ID_MAP_LENGTH
+    while signatures_index < STRINGS_ID_MAP_LENGTH
       signature = parse_fn_signatures[signatures_index]
-      :if signature.exists
+      if signature.exists
         log_string(strings_pointers[signatures_index])
         log_string("(")
         args_index = 0u64
-        :while args_index < signature.arity
+        while args_index < signature.arity
           log_string(strings_pointers[signature.arg_names[args_index]])
           log_string(" ")
           log_string(strings_pointers[signature.arg_types[args_index]])
           args_index = args_index + 1u64
-          :if args_index == signature.arity
+          if args_index == signature.arity
             log_line(") { ... }")
-          :else
+          else
             log_string(", ")
-          :end
-        :end
-      :end
+          end
+        end
+      end
       signatures_index = signatures_index + 1u64
-    :end
-  :else
+    end
+  else
     log_string("Unknown command \"")
     log_string(command)
     log_line("\".")
     syscall_exit(1i32)
-  :end
-  :return 0i32
+  end
+  return 0i32
 }

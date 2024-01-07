@@ -102,52 +102,52 @@ FUNCTIONS
   $ test <<\.
   > fn abc() {
   >   test = 5u8
-  >   :if test
+  >   if test
   > }
   > .
 
   $ test <<\.
   > fn abc() {
   >   x = 5u8
-  >   :if 123u8
-  >   :else :if x
-  >     :switch x
-  >     :case 1u8
-  >       :while 1u8
-  >       :end
-  >     :end
-  >   :end
+  >   if 123u8
+  >   else if x
+  >     switch x
+  >     case 1u8
+  >       while 1u8
+  >       end
+  >     end
+  >   end
   > }
   > .
 
   $ test <<\.
   > fn abc() {
-  >   :abcdef
+  >   abcdef
   > }
   > .
-  bad.minc:2:5: Expected one of 'if', 'else', 'switch', 'case', 'while', or 'end' after ':'.
-  2 |   :abcdef
-         ^
+  bad.minc:3:1: Expected statement or '}'.
+  3 | }
+     ^
   [1]
 
   $ test <<\.
   > fn abc() {
-  >   :elsif abcd
+  >   elsif abcd
   > }
   > .
-  bad.minc:2:8: Expected one of 'if', 'else', 'switch', 'case', 'while', or 'end' after ':'.
-  2 |   :elsif abcd
-            ^
+  bad.minc:2:9: Expected statement or '}'.
+  2 |   elsif abcd
+             ^
   [1]
 
   $ test <<\.
   > fn abc() {
-  >   :if test
+  >   if test
   > }
   > .
-  bad.minc:2:8: Unknown variable 'test'.
-  2 |   :if test
-            ^
+  bad.minc:2:7: Unknown variable 'test'.
+  2 |   if test
+           ^
   [1]
 
   $ test <<\.

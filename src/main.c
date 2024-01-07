@@ -333,6 +333,8 @@ strings_id_t builtin_strings_else;
 strings_id_t builtin_strings_while;
 strings_id_t builtin_strings_return;
 strings_id_t builtin_strings_end;
+strings_id_t builtin_strings_switch;
+strings_id_t builtin_strings_case;
 
 void builtin_strings_init() {
   builtin_strings_void = strings_id("void", 4);
@@ -341,6 +343,8 @@ void builtin_strings_init() {
   builtin_strings_while = strings_id("while", 5);
   builtin_strings_return = strings_id("return", 6);
   builtin_strings_end = strings_id("end", 3);
+  builtin_strings_switch = strings_id("switch", 6);
+  builtin_strings_case = strings_id("case", 4);
 }
 
 /* -------------------------------------------------------------------------------- */
@@ -998,84 +1002,48 @@ finished_arg_list:
       while (true) {
         parse_skip_whitespace();
         char c = peek_char();
-        if (c == ':') {
-          advance_char();
-          switch (parse_char()) {
-            case 'i':
-              if (!parse_exactly("f")) {
-                parse_error_expected_control_flow_keyword();
-              }
+        if (parse_identifier_start_chars[(size_t) c]) {
+          location_t name_location = current_location;
+          strings_id_t name = parse_permanent_identifier();
+          if (name == builtin_strings_if) {
+            parse_skip_whitespace();
+            parse_expression(0);
+          } else if (name == builtin_strings_else) {
+          } else if (name == builtin_strings_end) {
+          } else if (name == builtin_strings_switch) {
+            parse_skip_whitespace();
+            parse_expression(0);
+          } else if (name == builtin_strings_case) {
+            parse_skip_whitespace();
+            parse_expression(0);
+          } else if (name == builtin_strings_while) {
+            parse_skip_whitespace();
+            parse_expression(0);
+          } else {
+            parse_skip_whitespace();
+            char c = peek_char();
+            if (c == '=') {
+              advance_char();
               parse_skip_whitespace();
               parse_expression(0);
-              break;
-            case 'e':
-              switch (parse_char()) {
-                case 'l':
-                  if (!parse_exactly("se")) {
-                    parse_error_expected_control_flow_keyword();
-                  }
-                  break;
-                case 'n':
-                  if (!parse_exactly("d")) {
-                    parse_error_expected_control_flow_keyword();
-                  }
-                  break;
-                default:
-                  parse_error_expected_control_flow_keyword();
-                  break;
-              }
-              break;
-            case 's':
-              if (!parse_exactly("witch")) {
-                parse_error_expected_control_flow_keyword();
-              }
-              parse_skip_whitespace();
-              parse_expression(0);
-              break;
-            case 'c':
-              if (!parse_exactly("ase")) {
-                parse_error_expected_control_flow_keyword();
-              }
-              parse_skip_whitespace();
-              parse_expression(0);
-              break;
-            case 'w':
-              if (!parse_exactly("hile")) {
-                parse_error_expected_control_flow_keyword();
-              }
-              parse_skip_whitespace();
-              parse_expression(0);
-              break;
-            default:
-              parse_error_expected_control_flow_keyword();
-              break;
+              parse_local_variables[parse_local_variables_index] = (parse_local_variable_t) {
+                .name = name,
+                .type = {0}
+              };
+              parse_local_variables_index = parse_local_variables_index + 1;
+            } else if (c == '(') {
+              advance_char();
+              parse_call_arguments(0, name_location, name);
+            } else {
+              parse_log_current_location();
+              log_line("Expected statement or '}'.");
+              parse_log_current_location_line_with_column_marker();
+              syscall_exit(1);
+            }
           }
         } else if (c == '}') {
           advance_char();
           goto finished_fn_body;
-        } else if (parse_identifier_start_chars[(size_t) c]) {
-          location_t name_location = current_location;
-          strings_id_t name = parse_permanent_identifier();
-          parse_skip_whitespace();
-          char c = peek_char();
-          if (c == '=') {
-            advance_char();
-            parse_skip_whitespace();
-            parse_expression(0);
-            parse_local_variables[parse_local_variables_index] = (parse_local_variable_t) {
-              .name = name,
-              .type = {0}
-            };
-            parse_local_variables_index = parse_local_variables_index + 1;
-          } else if (c == '(') {
-            advance_char();
-            parse_call_arguments(0, name_location, name);
-          } else {
-            parse_log_current_location();
-            log_line("Expected statement or '}'.");
-            parse_log_current_location_line_with_column_marker();
-            syscall_exit(1);
-          }
         } else {
           advance_char();
           parse_log_current_location();
