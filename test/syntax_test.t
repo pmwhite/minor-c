@@ -247,6 +247,19 @@ Type-annotated expressions.
   > }
   > .
 
+CONSTANTS
+
+  $ test <<\.
+  > const false = 0
+  > const true = 1
+  > fn f() {
+  >   if true
+  >     while false
+  >     end
+  >   end
+  > }
+  > .
+
 TYPES
 
 Named types.
@@ -270,7 +283,7 @@ Array types.
   $ test <<\.
   > fn abc(a `b*[1000000000000000000000000000000000]) { }
   > .
-  bad.minc:1:35: Array size too large; it must be representable in 64 bits.
+  bad.minc:1:35: Integer constant too large; it must be representable in 64 bits.
   1 | fn abc(a `b*[1000000000000000000000000000000000]) { }
                                        ^
   [1]

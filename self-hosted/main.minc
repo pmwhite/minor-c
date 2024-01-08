@@ -20,3 +20,22 @@ fn syscall_open(filename `char*, flags `u64, mode `u64) `i64 {
 fn syscall_exit(status `i32) `i64 {
   return syscall1(60u64@`void*, status@`i64@`void*)@`i64
 }
+
+fn min_size(a `u64, b `u64) `u64 {
+  if a < b
+    return a
+  else
+    return b
+  end
+}
+
+
+const false = 0
+const true = 1
+
+fn string_equal(expected `char*, actual `char*) `bool {
+  i = 0u64
+  while true
+    i = i + 1
+  end
+}

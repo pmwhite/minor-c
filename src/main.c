@@ -516,14 +516,14 @@ void parse_skip_whitespace1() {
 
 void parse_error_expected_declaration_start_keyword() {
   parse_log_current_location();
-  log_line("Expected either 'struct' or 'fn' to begin declaration.");
+  log_line("Expected 'struct', 'const', or 'fn' to begin declaration.");
   parse_log_current_location_line_with_column_marker();
   syscall_exit(1);
 }
 
 void parse_error_expected_control_flow_keyword() {
   parse_log_current_location();
-  log_line("Expected one of 'if', 'else', 'switch', 'case', 'while', or 'end' after ':'.");
+  log_line("Expected statement.");
   parse_log_current_location_line_with_column_marker();
   syscall_exit(1);
 }
@@ -617,7 +617,7 @@ typedef struct type_t {
   u16_t first_array_length_index;
 } type_t;
 
-u64_t parse_array_size() {
+u64_t parse_integer_constant() {
   u64_t current = 0;
   size_t c = (size_t) parse_char();
   if (parse_digit_chars[c]) {
@@ -634,7 +634,7 @@ u64_t parse_array_size() {
          which is the size we care about).. */
       if (next < current) {
         parse_log_current_location();
-        log_line("Array size too large; it must be representable in 64 bits.");
+        log_line("Integer constant too large; it must be representable in 64 bits.");
         parse_log_current_location_line_with_column_marker();
         syscall_exit(1);
       }
@@ -668,7 +668,7 @@ type_t parse_type() {
     } else if (c == '[') {
       advance_char();
       ensure_array_space(array_lengths_index, MAX_ARRAY_LENGTHS, "array_lengths");
-      u64_t length = parse_array_size();
+      u64_t length = parse_integer_constant();
       array_lengths[array_lengths_index] = length;
       array_lengths_index = array_lengths_index + 1;
       if (!parse_exactly("]")) {
@@ -713,14 +713,22 @@ typedef struct parse_fn_signature_t {
 
 parse_fn_signature_t parse_fn_signatures[STRINGS_ID_MAP_LENGTH];
 
+typedef struct parse_constant_t {
+  bool_t exists;
+  u64_t value;
+} parse_constant_t;
+
+parse_constant_t parse_constants[STRINGS_ID_MAP_LENGTH];
+
 typedef u8_t expression_kind_t;
 #define expression_kind_operation 0
 #define expression_kind_operator 1
 #define expression_kind_integer 2
-#define expression_kind_identifier 3
-#define expression_kind_group 4
-#define expression_kind_cast 4
-#define expression_kind_ascription 4
+#define expression_kind_local 3
+#define expression_kind_constant 4
+#define expression_kind_group 5
+#define expression_kind_cast 6
+#define expression_kind_ascription 7
 
 parse_local_variable_t parse_local_variables[MAX_LOCAL_VARIABLES];
 size_t parse_local_variables_index = 0;
@@ -826,19 +834,25 @@ void parse_non_operator_expression(u8_t depth) {
       default:
         (void) 0;
         size_t local_variable_index = 0;
-        bool_t found_variable = false;
+        bool_t found_name = false;
         parse_local_variable_t variable;
+        expression_kind_t kind;
         while (local_variable_index < parse_local_variables_index) {
           variable = parse_local_variables[local_variable_index];
           if (variable.name == name) {
-            found_variable = true;
+            found_name = true;
+            kind = expression_kind_local;
             break;
           }
           local_variable_index = local_variable_index + 1;
         }
-        if (found_variable) {
+        if (!found_name && parse_constants[name].exists) {
+          found_name = true;
+          kind = expression_kind_constant;
+        }
+        if (found_name) {
           parse_expressions[parse_expression_index] = (expression_t) {
-            .kind = expression_kind_identifier,
+            .kind = kind,
             .arity = 0,
             .data = { .name = name }
           };
@@ -985,6 +999,26 @@ void parse_declaration() {
             syscall_exit(1);
         }
       }
+      break;
+    case 'c':
+      if (!parse_exactly("onst")) {
+        parse_error_expected_declaration_start_keyword();
+      }
+      parse_skip_whitespace1();
+      strings_id_t const_name = parse_permanent_identifier();
+      parse_skip_whitespace();
+      if (!parse_exactly("=")) {
+        parse_log_current_location();
+        log_line("Expected '='.");
+        parse_log_current_location_line_with_column_marker();
+        syscall_exit(1);
+      }
+      parse_skip_whitespace();
+      u64_t const_value = parse_integer_constant();
+      parse_constants[const_name] = (parse_constant_t) {
+        .exists = true,
+        .value = const_value
+      };
       break;
     case 'f':
       if (!parse_exactly("n")) {
