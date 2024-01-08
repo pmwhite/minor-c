@@ -228,13 +228,9 @@ Casting expressions.
 
   $ test <<\.
   > fn cast_to_void(x `i32) `void* {
-  >   y = cast`void* cast`void* x
+  >   y = x@`void*@`void*
   > }
   > .
-  bad.minc:2:8: Unknown variable 'cast`void'.
-  2 |   y = cast`void* cast`void* x
-            ^
-  [1]
 
 Type-annotated expressions.
 
@@ -243,10 +239,6 @@ Type-annotated expressions.
   >   y = x`i32`i32
   > }
   > .
-  bad.minc:2:8: Unknown variable 'x`i32`i32'.
-  2 |   y = x`i32`i32
-            ^
-  [1]
 
 TYPES
 

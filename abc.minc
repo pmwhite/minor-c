@@ -1,6 +1,3 @@
-fn f() {
-  x = 5u8
-}
-fn g() {
-  f()
+fn cast_to_void(x `i32) `void* {
+  y = x`i32`i32
 }

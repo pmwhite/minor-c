@@ -528,13 +528,13 @@ void parse_error_expected_control_flow_keyword() {
   syscall_exit(1);
 }
 
-u8_t parse_identifier_start_chars[256];
-u8_t parse_identifier_rest_chars[256];
-u8_t parse_digit_chars[256];
-u8_t parse_operator_chars[256];
+u8_t parse_identifier_start_chars[256] = {0};
+u8_t parse_identifier_rest_chars[256] = {0};
+u8_t parse_digit_chars[256] = {0};
+u8_t parse_operator_chars[256] = {0};
 
 void parse_init_char_tables() {
-  size_t c = 'a' - 1;
+  size_t c = 'a';
   while (c <= 'z') {
     parse_identifier_start_chars[c] = 1;
     parse_identifier_rest_chars[c] = 1;
@@ -719,9 +719,21 @@ typedef u8_t expression_kind_t;
 #define expression_kind_integer 2
 #define expression_kind_identifier 3
 #define expression_kind_group 4
+#define expression_kind_cast 4
+#define expression_kind_ascription 4
 
 parse_local_variable_t parse_local_variables[MAX_LOCAL_VARIABLES];
 size_t parse_local_variables_index = 0;
+
+typedef union expression_data_t {
+  /* Data is the id for one of (a) the name of the operation or operator, (b)
+    the identifier, or (c) the digits of the integer, depending on the kind. */
+  strings_id_t name;
+  /* Type is active when the kind is cast or ascription, in which case it is
+      the type being ascribed or casted to. */
+  type_t type;
+  /* Group expressions use neither data nor type. */
+} expression_data_t;
 
 typedef struct expression_t {
   expression_kind_t kind;
@@ -729,13 +741,19 @@ typedef struct expression_t {
      operator or group expressions, since the arity is always 2 or 1
      respectively, but it _is_ needed for function calls. */
   u8_t arity;
-  /* Data is the id for one of (a) the name of the operation or operator, (b)
-     the identifier, or (c) the digits of the integer, depending on the kind. For groups, data is  */
-  strings_id_t data;
+  expression_data_t data;
 } expression_t;
 
 expression_t parse_expressions[MAX_EXPRESSIONS];
 size_t parse_expression_index = 0;
+
+void parse_shift_expressions_starting_at(size_t starting_at) {
+  size_t i = parse_expression_index + 1;
+  while (i > starting_at) {
+    parse_expressions[i] = parse_expressions[i - 1];
+    i = i - 1;
+  }
+}
 
 void parse_expression(u8_t depth);
 
@@ -749,7 +767,7 @@ void parse_call_arguments(u8_t depth, location_t name_location, strings_id_t nam
     parse_expressions[parse_expression_index] = (expression_t) {
       .kind = expression_kind_operation,
       .arity = fn.arity,
-      .data = name
+      .data = { .name = name }
     };
     parse_expression_index = parse_expression_index + 1;
     size_t i = 0;
@@ -784,6 +802,7 @@ void parse_non_operator_expression(u8_t depth) {
     log_line("Reached max expression depth.");
     syscall_exit(1);
   }
+  size_t result_expression_index = parse_expression_index;
   char c = peek_char();
   if (parse_identifier_start_chars[(size_t) c]) {
     location_t name_location = current_location;
@@ -811,7 +830,7 @@ void parse_non_operator_expression(u8_t depth) {
           parse_expressions[parse_expression_index] = (expression_t) {
             .kind = expression_kind_identifier,
             .arity = 0,
-            .data = name
+            .data = { .name = name }
           };
           parse_expression_index = parse_expression_index + 1;
         } else {
@@ -852,7 +871,7 @@ void parse_non_operator_expression(u8_t depth) {
     parse_expressions[parse_expression_index] = (expression_t) {
       .kind = expression_kind_group,
       .arity = 1,
-      .data = 0
+      .data = { .name = 0 }
     };
     parse_expression_index = parse_expression_index + 1;
     parse_expression(depth + 1);
@@ -870,7 +889,31 @@ void parse_non_operator_expression(u8_t depth) {
     syscall_exit(1);
   }
   parse_skip_whitespace();
-  c = peek_char();
+  while (true) {
+    c = peek_char();
+    if (c == '@') {
+      advance_char();
+      parse_skip_whitespace();
+      parse_shift_expressions_starting_at(result_expression_index);
+      type_t type = parse_type();
+      parse_expressions[result_expression_index] = (expression_t) {
+        .kind = expression_kind_cast,
+        .arity = 1,
+        .data = { .type = type }
+      };
+    } else if (c == '`') {
+      parse_shift_expressions_starting_at(result_expression_index);
+      parse_type();
+      type_t type = parse_type();
+      parse_expressions[result_expression_index] = (expression_t) {
+        .kind = expression_kind_ascription,
+        .arity = 1,
+        .data = { .type = type }
+      };
+    } else {
+      break;
+    }
+  }
 }
 
 void parse_expression(u8_t depth) {
@@ -883,15 +926,11 @@ void parse_expression(u8_t depth) {
        over by one to make space for the operator's expression to go before all
        of its operands (like how function expressions work). */
     strings_id_t operator_name = parse_operator();
-    size_t i = parse_expression_index + 1;
-    while (i > left_operand_index) {
-      parse_expressions[i] = parse_expressions[i - 1];
-      i = i - 1;
-    }
-    parse_expressions[i] = (expression_t) {
+    parse_shift_expressions_starting_at(left_operand_index);
+    parse_expressions[left_operand_index] = (expression_t) {
       .kind = expression_kind_operator,
       .arity = 2,
-      .data = operator_name
+      .data = (expression_data_t) { .name = operator_name }
     };
     parse_expression_index = parse_expression_index + 1;
     parse_skip_whitespace();
