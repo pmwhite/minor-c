@@ -682,45 +682,6 @@ u64_t parse_integer_constant() {
   return current;
 }
 
-type_t parse_type() {
-  if (!parse_exactly("`")) {
-    parse_log_current_location();
-    log_line("Expected '`' to begin type.");
-    parse_log_current_location_line_with_column_marker();
-    syscall_exit(1);
-  }
-  strings_id_t base = parse_permanent_identifier();
-  type_t result = {
-    .base = base,
-    .modifier_count = 0,
-    .modifiers = 0,
-    .first_array_length_index = array_lengths_index
-  };
-  while (true) {
-    char c = peek_char();
-    if (c == '*') {
-      advance_char();
-      result.modifier_count = result.modifier_count << 1;
-    } else if (c == '[') {
-      advance_char();
-      ensure_array_space(array_lengths_index, MAX_ARRAY_LENGTHS, "array_lengths");
-      u64_t length = parse_integer_constant();
-      array_lengths[array_lengths_index] = length;
-      array_lengths_index = array_lengths_index + 1;
-      if (!parse_exactly("]")) {
-        parse_log_current_location();
-        log_line("Expected ']' after array size.");
-        parse_log_current_location_line_with_column_marker();
-        syscall_exit(1);
-      }
-    } else {
-      break;
-    }
-  }
-  return result;
-}
-
-
 typedef u8_t expression_kind_t;
 #define expression_kind_operation 0
 #define expression_kind_operator 1
@@ -762,6 +723,44 @@ void parse_shift_expressions_starting_at(size_t starting_at) {
     parse_expressions[i] = parse_expressions[i - 1];
     i = i - 1;
   }
+}
+
+type_t parse_type() {
+  if (!parse_exactly("`")) {
+    parse_log_current_location();
+    log_line("Expected '`' to begin type.");
+    parse_log_current_location_line_with_column_marker();
+    syscall_exit(1);
+  }
+  strings_id_t base = parse_permanent_identifier();
+  type_t result = {
+    .base = base,
+    .modifier_count = 0,
+    .modifiers = 0,
+    .first_array_length_index = array_lengths_index
+  };
+  while (true) {
+    char c = peek_char();
+    if (c == '*') {
+      advance_char();
+      result.modifier_count = result.modifier_count << 1;
+    } else if (c == '[') {
+      advance_char();
+      ensure_array_space(array_lengths_index, MAX_ARRAY_LENGTHS, "array_lengths");
+      u64_t length = parse_integer_constant();
+      array_lengths[array_lengths_index] = length;
+      array_lengths_index = array_lengths_index + 1;
+      if (!parse_exactly("]")) {
+        parse_log_current_location();
+        log_line("Expected ']' after array size.");
+        parse_log_current_location_line_with_column_marker();
+        syscall_exit(1);
+      }
+    } else {
+      break;
+    }
+  }
+  return result;
 }
 
 void parse_expression(u8_t depth);
