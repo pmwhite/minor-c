@@ -1,3 +1,0 @@
-self-hosted/main.minc:39:17: Expected statement or '}'.
-39 |     if expected[i] != actual[i]
-                    ^

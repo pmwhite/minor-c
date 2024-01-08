@@ -36,6 +36,6 @@ const true = 1
 fn string_equal(expected `char*, actual `char*) `bool {
   i = 0u64
   while true
-    i = i + 1
+    i = i + 1u64
   end
 }
