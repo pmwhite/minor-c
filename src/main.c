@@ -992,65 +992,72 @@ finished_arg_list:
       } else {
         signature.return_type.base = builtin_strings_void;
       }
-      if (!parse_exactly("{")) {
-        parse_log_current_location();
-        log_line("Expected '{' after argument list to begin function body.");
-        parse_log_current_location_line_with_column_marker();
-        syscall_exit(1);
-      }
-      parse_fn_signatures[fn_name] = signature;
-      while (true) {
-        parse_skip_whitespace();
-        char c = peek_char();
-        if (parse_identifier_start_chars[(size_t) c]) {
-          location_t name_location = current_location;
-          strings_id_t name = parse_permanent_identifier();
-          if (name == builtin_strings_if) {
-            parse_skip_whitespace();
-            parse_expression(0);
-          } else if (name == builtin_strings_else) {
-          } else if (name == builtin_strings_end) {
-          } else if (name == builtin_strings_switch) {
-            parse_skip_whitespace();
-            parse_expression(0);
-          } else if (name == builtin_strings_case) {
-            parse_skip_whitespace();
-            parse_expression(0);
-          } else if (name == builtin_strings_while) {
-            parse_skip_whitespace();
-            parse_expression(0);
-          } else {
-            parse_skip_whitespace();
-            char c = peek_char();
-            if (c == '=') {
-              advance_char();
+      c = peek_char();
+      if (c == '{') {
+        advance_char();
+        parse_fn_signatures[fn_name] = signature;
+        while (true) {
+          parse_skip_whitespace();
+          char c = peek_char();
+          if (parse_identifier_start_chars[(size_t) c]) {
+            location_t name_location = current_location;
+            strings_id_t name = parse_permanent_identifier();
+            if (name == builtin_strings_if) {
               parse_skip_whitespace();
               parse_expression(0);
-              parse_local_variables[parse_local_variables_index] = (parse_local_variable_t) {
-                .name = name,
-                .type = {0}
-              };
-              parse_local_variables_index = parse_local_variables_index + 1;
-            } else if (c == '(') {
-              advance_char();
-              parse_call_arguments(0, name_location, name);
+            } else if (name == builtin_strings_else) {
+            } else if (name == builtin_strings_end) {
+            } else if (name == builtin_strings_switch) {
+              parse_skip_whitespace();
+              parse_expression(0);
+            } else if (name == builtin_strings_case) {
+              parse_skip_whitespace();
+              parse_expression(0);
+            } else if (name == builtin_strings_while) {
+              parse_skip_whitespace();
+              parse_expression(0);
             } else {
-              parse_log_current_location();
-              log_line("Expected statement or '}'.");
-              parse_log_current_location_line_with_column_marker();
-              syscall_exit(1);
+              parse_skip_whitespace();
+              char c = peek_char();
+              if (c == '=') {
+                advance_char();
+                parse_skip_whitespace();
+                parse_expression(0);
+                parse_local_variables[parse_local_variables_index] = (parse_local_variable_t) {
+                  .name = name,
+                  .type = {0}
+                };
+                parse_local_variables_index = parse_local_variables_index + 1;
+              } else if (c == '(') {
+                advance_char();
+                parse_call_arguments(0, name_location, name);
+              } else {
+                parse_log_current_location();
+                log_line("Expected statement or '}'.");
+                parse_log_current_location_line_with_column_marker();
+                syscall_exit(1);
+              }
             }
+          } else if (c == '}') {
+            advance_char();
+            goto finished_fn_body;
+          } else {
+            advance_char();
+            parse_log_current_location();
+            log_line("Expected statement or '}'.");
+            parse_log_current_location_line_with_column_marker();
+            syscall_exit(1);
           }
-        } else if (c == '}') {
-          advance_char();
-          goto finished_fn_body;
-        } else {
-          advance_char();
-          parse_log_current_location();
-          log_line("Expected statement or '}'.");
-          parse_log_current_location_line_with_column_marker();
-          syscall_exit(1);
         }
+      } else if (c == '.') {
+        /* We already saved the function signature, so there is nothing else to
+           do except move past the dot. */
+        advance_char();
+      } else {
+        parse_log_current_location();
+        log_line("Expected '.' or '{' after argument list.");
+        parse_log_current_location_line_with_column_marker();
+        syscall_exit(1);
       }
 finished_fn_body:
       break;
