@@ -913,7 +913,6 @@ void parse_non_operator_expression(u8_t depth) {
       };
     } else if (c == '`') {
       parse_shift_expressions_starting_at(result_expression_index);
-      parse_type();
       type_t type = parse_type();
       parse_expressions[result_expression_index] = (expression_t) {
         .kind = expression_kind_ascription,

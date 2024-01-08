@@ -12,3 +12,11 @@ fn syscall_read(fd `i32, data `void*, nbytes `u64) `i64 {
 fn syscall_write(fd `i32, data `void*, nbytes `u64) `i64 {
   return syscall3(1u64@`void*, fd@`i64@`void*, data, nbytes@`void*)@`i64
 }
+
+fn syscall_open(filename `char*, flags `u64, mode `u64) `i64 {
+  return syscall3(2u64@`void*, filename@`void*, flags@`i64@`void*, mode@`i64@`void*)@`i64
+}
+
+fn syscall_exit(status `i32) `i64 {
+  return syscall1(60u64@`void*, status@`i64@`void*)@`i64
+}

@@ -240,6 +240,13 @@ Type-annotated expressions.
   > }
   > .
 
+  $ test <<\.
+  > fn f(x `i32) { }
+  > fn cast_to_void(x `i32) `void* {
+  >   y = f(0i32)`i32
+  > }
+  > .
+
 TYPES
 
 Named types.
