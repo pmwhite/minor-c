@@ -772,6 +772,16 @@ void parse_call_arguments(u8_t depth, location_t name_location, strings_id_t nam
     parse_expression_index = parse_expression_index + 1;
     size_t i = 0;
     while (i < fn.arity) {
+      if (i > 0) {
+        if (parse_exactly(",")) {
+          parse_skip_whitespace();
+        } else {
+          parse_log_current_location();
+          log_line("Expected ',' to separate arguments.");
+          parse_log_current_location_line_with_column_marker();
+          syscall_exit(1);
+        }
+      }
       parse_expression(depth + 1);
       parse_skip_whitespace();
       i = i + 1;
@@ -1031,10 +1041,10 @@ finished_arg_list:
       } else {
         signature.return_type.base = builtin_strings_void;
       }
+      parse_fn_signatures[fn_name] = signature;
       c = peek_char();
       if (c == '{') {
         advance_char();
-        parse_fn_signatures[fn_name] = signature;
         while (true) {
           parse_skip_whitespace();
           char c = peek_char();
@@ -1053,6 +1063,9 @@ finished_arg_list:
               parse_skip_whitespace();
               parse_expression(0);
             } else if (name == builtin_strings_while) {
+              parse_skip_whitespace();
+              parse_expression(0);
+            } else if (name == builtin_strings_return) {
               parse_skip_whitespace();
               parse_expression(0);
             } else {

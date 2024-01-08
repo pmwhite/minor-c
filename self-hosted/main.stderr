@@ -1,3 +1,0 @@
-self-hosted/main.minc:9:10: Expected statement or '}'.
-9 |   return cast`i64 syscall3(cast`void* 0u64, cast`void* cast`i64 fd, cast`void* nbytes);
-            ^
