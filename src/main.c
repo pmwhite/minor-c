@@ -617,6 +617,42 @@ typedef struct type_t {
   u16_t first_array_length_index;
 } type_t;
 
+typedef struct struct_field_t {
+  strings_id_t name;
+  type_t type;
+} struct_field_t;
+
+typedef struct struct_info_t {
+  u16_t field_count;
+  u16_t first_field_index;
+  bool_t exists;
+} struct_info_t;
+
+struct_field_t struct_fields[MAX_STRUCT_FIELDS];
+size_t struct_fields_index = 0;
+struct_info_t struct_infos[STRINGS_ID_MAP_LENGTH];
+
+typedef struct parse_local_variable_t {
+  strings_id_t name;
+  type_t type;
+} parse_local_variable_t;
+
+typedef struct parse_fn_signature_t {
+  bool_t exists;
+  u16_t arity;
+  parse_local_variable_t args[14];
+  type_t return_type;
+} parse_fn_signature_t;
+
+parse_fn_signature_t parse_fn_signatures[STRINGS_ID_MAP_LENGTH];
+
+typedef struct parse_constant_t {
+  bool_t exists;
+  u64_t value;
+} parse_constant_t;
+
+parse_constant_t parse_constants[STRINGS_ID_MAP_LENGTH];
+
 u64_t parse_integer_constant() {
   u64_t current = 0;
   size_t c = (size_t) parse_char();
@@ -684,41 +720,6 @@ type_t parse_type() {
   return result;
 }
 
-typedef struct struct_field_t {
-  strings_id_t name;
-  type_t type;
-} struct_field_t;
-
-typedef struct struct_info_t {
-  u16_t field_count;
-  u16_t first_field_index;
-  bool_t exists;
-} struct_info_t;
-
-struct_field_t struct_fields[MAX_STRUCT_FIELDS];
-size_t struct_fields_index = 0;
-struct_info_t struct_infos[STRINGS_ID_MAP_LENGTH];
-
-typedef struct parse_local_variable_t {
-  strings_id_t name;
-  type_t type;
-} parse_local_variable_t;
-
-typedef struct parse_fn_signature_t {
-  bool_t exists;
-  u16_t arity;
-  parse_local_variable_t args[14];
-  type_t return_type;
-} parse_fn_signature_t;
-
-parse_fn_signature_t parse_fn_signatures[STRINGS_ID_MAP_LENGTH];
-
-typedef struct parse_constant_t {
-  bool_t exists;
-  u64_t value;
-} parse_constant_t;
-
-parse_constant_t parse_constants[STRINGS_ID_MAP_LENGTH];
 
 typedef u8_t expression_kind_t;
 #define expression_kind_operation 0
