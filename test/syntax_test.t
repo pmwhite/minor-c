@@ -112,7 +112,7 @@ FUNCTIONS
   >   if 123u8
   >   else if x
   >     switch x
-  >     case 1u8
+  >     case 1
   >       while 1u8
   >       end
   >     end
@@ -249,6 +249,8 @@ Type-annotated expressions.
 
 CONSTANTS
 
+Constants can be used as expressions.
+
   $ test <<\.
   > const false = 0
   > const true = 1
@@ -256,8 +258,33 @@ CONSTANTS
   >   if true
   >     while false
   >     end
+  >     while false
+  >     end
   >   end
   > }
+  > .
+
+Constants can be used in cases constants.
+
+  $ test <<\.
+  > const false = 0
+  > const true = 1
+  > fn f() `u8 {
+  >   switch true
+  >     case true
+  >       return true
+  >     case false
+  >       return false
+  >   end
+  > }
+  > .
+
+Arrays sizes can be named constants.
+
+  $ test <<\.
+  > const length = 1000
+  > struct x
+  >   y `u8[length];
   > .
 
 TYPES

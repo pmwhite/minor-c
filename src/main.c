@@ -654,32 +654,52 @@ typedef struct parse_constant_t {
 parse_constant_t parse_constants[STRINGS_ID_MAP_LENGTH];
 
 u64_t parse_integer_constant() {
-  u64_t current = 0;
-  size_t c = (size_t) parse_char();
+  size_t c = (size_t) peek_char();
   if (parse_digit_chars[c]) {
-    current = c - '0';
-  }
-  while (true) {
-    c = (size_t) peek_char();
-    if (parse_digit_chars[c]) {
-      advance_char();
-      size_t next = current * 10 + c - '0';
-      /* If incorporating a digit causes the accumulated value to go down, then
-         we must have overflowed, which means the literal denotes an
-         unrepresentable integer (at least, it is unrepresentable in 64 bits,
-         which is the size we care about).. */
-      if (next < current) {
-        parse_log_current_location();
-        log_line("Integer constant too large; it must be representable in 64 bits.");
-        parse_log_current_location_line_with_column_marker();
-        syscall_exit(1);
+    advance_char();
+    u64_t current = c - '0';
+    while (true) {
+      c = (size_t) peek_char();
+      if (parse_digit_chars[c]) {
+        advance_char();
+        size_t next = current * 10 + c - '0';
+        /* If incorporating a digit causes the accumulated value to go down, then
+          we must have overflowed, which means the literal denotes an
+          unrepresentable integer (at least, it is unrepresentable in 64 bits,
+          which is the size we care about).. */
+        if (next < current) {
+          parse_log_current_location();
+          log_line("Integer constant too large; it must be representable in 64 bits.");
+          parse_log_current_location_line_with_column_marker();
+          syscall_exit(1);
+        }
+        current = next;
+      } else {
+        break;
       }
-      current = next;
-    } else {
-      break;
     }
+    return current;
+  } else if (parse_identifier_start_chars[c]) {
+    strings_id_t name = parse_permanent_identifier();
+    parse_constant_t constant = parse_constants[name];
+    if (constant.exists) {
+      return constant.value;
+    } else {
+      parse_log_current_location();
+      log_string("Unknown integer constant '");
+      log_string(strings_pointers[name]);
+      log_line("'.");
+      parse_log_current_location_line_with_column_marker();
+      syscall_exit(1);
+      return 0;
+    }
+  } else {
+    parse_log_current_location();
+    log_line("Expected literal or named integer constant.");
+    parse_log_current_location_line_with_column_marker();
+    syscall_exit(1);
+    return 0;
   }
-  return current;
 }
 
 typedef u8_t expression_kind_t;
@@ -1015,6 +1035,7 @@ void parse_declaration() {
       }
       parse_skip_whitespace();
       u64_t const_value = parse_integer_constant();
+      parse_skip_whitespace1();
       parse_constants[const_name] = (parse_constant_t) {
         .exists = true,
         .value = const_value
@@ -1094,7 +1115,8 @@ finished_arg_list:
               parse_expression(0);
             } else if (name == builtin_strings_case) {
               parse_skip_whitespace();
-              parse_expression(0);
+              parse_integer_constant();
+              parse_skip_whitespace1();
             } else if (name == builtin_strings_while) {
               parse_skip_whitespace();
               parse_expression(0);
